@@ -32,8 +32,8 @@ Server defaults to `http://localhost:5000`, client to Vite's local URL.
 3. Simulate **Package delivered**.
 4. Observe `WAIT`.
 5. Click **End meeting**.
-6. Simulate **Package delivered** again.
-7. Observe `NOTIFY`.
+6. Observe the original package automatically become a notification.
+7. Click **Show package**, then **Dismiss**. The timeline retains its history.
 
 This is the deterministic backbone. AI/MCP/Amazon integrations will be layered on top after the core loop is stable.
 
@@ -57,3 +57,15 @@ Stop both services with Ctrl+C. Run `npm.cmd run build` to verify the production
 The demo works without MongoDB: events are validated and processed but are not persisted.
 To enable persistence, set `MONGODB_URI` in `server/.env` to a running MongoDB instance and restart.
 Context is kept in memory and resets on server restart.
+
+
+## Deferred-event demo
+The server owns current context; clients submit device events without a context override.
+`GET /api/events` lists session events and their decision timeline.
+`PATCH /api/context` with `availability: available` reevaluates deferred events.
+`POST /api/events/:id/dismiss` dismisses an event idempotently.
+The dashboard refreshes every 1.5 seconds, so changes from another tab are reflected automatically.
+Event lifecycle, context, and dismissal state are currently in memory and reset on server restart.
+Optional MongoDB stores raw events only; durable lifecycle recovery is a later milestone.
+
+Run the lifecycle regression test with `node --test server/test/event-lifecycle.test.js`.
