@@ -1,0 +1,1 @@
+{"version":"2.0.0","tasks":[{"label":"Ambient: Run locally","type":"shell","command":"npm.cmd run dev","problemMatcher":[],"presentation":{"reveal":"always","panel":"dedicated"}},{"label":"Ambient: Build client","type":"shell","command":"npm.cmd run build","problemMatcher":[],"group":"build"}]}
