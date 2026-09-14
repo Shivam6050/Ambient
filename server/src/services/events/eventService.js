@@ -1,36 +1,36 @@
 import Event from '../../models/Event.js';
+import Record from '../../models/EventRecord.js';
 import { decide } from '../decisions/decisionEngine.js';
 import { readContext } from '../context/contextService.js';
-const records = new Map();
-function transition(record, context) {
-  record.context = context;
-  record.decision = decide({ event: record.event, context });
-  record.status = record.decision.decision === 'WAIT' ? 'deferred' : 'notified';
-  record.timeline.push({ at: new Date().toISOString(), action: record.decision.decision, reason: record.decision.reason });
-}
 export async function processEvent(payload) {
   if (!payload || !['package_delivered', 'security_alert'].includes(payload.type)) throw new Error('Choose a supported demo event.');
   const document = new Event(payload);
   await document.validate();
-  const event = process.env.MONGODB_URI ? (await document.save()).toObject() : document.toObject();
-  const record = { id: String(event._id), event, timeline: [{ at: new Date().toISOString(), action: 'RECEIVED', reason: 'Simulated device event received.' }] };
-  transition(record, readContext());
-  records.set(record.id, record);
-  return record;
+  const event = document.toObject();
+  const context = await readContext();
+  const decision = decide({ event, context });
+  return Record.create({ id: String(event._id), event, context, decision,
+    status: decision.decision === 'WAIT' ? 'deferred' : 'notified',
+    timeline: [{ at: new Date(), action: 'RECEIVED', reason: 'Simulated device event received.' }, { at: new Date(), action: decision.decision, reason: decision.reason }]
+  });
 }
-export function listEvents() { return [...records.values()].reverse(); }
-export function reevaluateDeferred(context) {
+export function listEvents() { return Record.find().sort({ createdAt: -1, _id: -1 }).lean(); }
+export async function reevaluateDeferred(context) {
   if (context.availability !== 'available') return;
-  for (const record of records.values()) {
-    if (record.status === 'deferred') transition(record, context);
+  const records = await Record.find({ status: 'deferred' }).lean();
+  for (const record of records) {
+    const decision = decide({ event: record.event, context });
+    // The status condition and timeline update are one atomic write.
+    await Record.updateOne({ id: record.id, status: 'deferred' }, {
+      $set: { context, decision, status: 'notified' },
+      $push: { timeline: { at: new Date(), action: 'NOTIFY', reason: decision.reason } }
+    });
   }
 }
-export function dismissEvent(id) {
-  const record = records.get(id);
-  if (!record) return null;
-  if (record.status !== 'dismissed') {
-    record.status = 'dismissed';
-    record.timeline.push({ at: new Date().toISOString(), action: 'DISMISSED', reason: 'Dismissed by you.' });
-  }
-  return record;
+export async function dismissEvent(id) {
+  const updated = await Record.findOneAndUpdate({ id, status: { $ne: 'dismissed' } }, {
+    $set: { status: 'dismissed' },
+    $push: { timeline: { at: new Date(), action: 'DISMISSED', reason: 'Dismissed by you.' } }
+  }, { new: true }).lean();
+  return updated || Record.findOne({ id }).lean();
 }

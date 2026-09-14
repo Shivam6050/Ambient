@@ -1,23 +1,16 @@
-# Ambient — Architecture v0.1
+# Ambient architecture
 
-Core loop: **Event → Context → Decision → Action**.
+Core loop: Event -> saved context -> decision -> saved lifecycle -> dashboard action.
 
-## MVP
-- React/Vite dashboard
-- Express API
-- In-memory user context
-- MongoDB event persistence
-- Deterministic decision engine before adding an LLM
-- Simulated Ring package/security events
-- Alexa+-style interaction layer later
+- React/Vite dashboard polls Express every 1.5 seconds.
+- Express uses server-owned MongoDB context for its deterministic decisions.
+- MongoDB `contexts` stores the local-user state.
+- MongoDB `eventrecords` stores each event, decision, status, and history.
+- Conditional atomic writes prevent duplicate NOTIFY and DISMISSED history entries.
+- Startup and periodic recovery release deferred events if saved context is available.
+- One API process serializes mutations; multiple API replicas are not supported yet.
+- The local WiredTiger development database stores files under `server/.local-mongo/`.
 
-## Why deterministic first?
-We need a reliable backbone before adding model reasoning. The LLM will eventually produce a structured decision proposal; policy/rules will validate and execute it.
-
-## Planned evolution
-1. Event + context backbone
-2. Agent service with structured JSON output
-3. MCP tool layer
-4. Alexa+ simulation
-5. AWS Builder integration
-6. Real Amazon integrations where feasible
+The current UI simulates Ring inputs and displays notifications. It does not deliver to Alexa or other external devices.
+Next: structured AI proposals with policy validation, followed by the Alexa+ simulation and AWS integration.
+See persistence.md for implementation details, test coverage, and limitations.
