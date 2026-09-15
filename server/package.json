@@ -8,6 +8,7 @@
     "db": "node scripts/local-db.js"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1133.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",

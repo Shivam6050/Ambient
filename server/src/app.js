@@ -1,3 +1,4 @@
+import { agentStatus } from './services/agent/decisionService.js';
 import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
@@ -15,6 +16,7 @@ const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 app.get('/api/health', (_, res) => res.status(mongoose.connection.readyState === 1 ? 200 : 503).json({ success: mongoose.connection.readyState === 1, service: 'ambient-server', storage: 'mongodb' }));
+app.get('/api/agent/status', (_, res) => res.json({ success: true, data: agentStatus() }));
 app.use('/api/events', eventRoutes);
 app.use('/api/context', contextRoutes);
 app.use((error, req, res, next) => {

@@ -66,3 +66,6 @@ are left untouched; they lack historical decision/dismissal data and are not aut
 Previously memory-only demo state cannot be recovered after its old server process has stopped.
 
 See [persistence implementation](docs/persistence.md) for what changed, why, how, and limitations.
+
+## Optional AI decisions
+See [AI decision layer](docs/ai-decisions.md) for Bedrock configuration, policy behavior, and test limitations. Rules remain active by default. Run node --test server/test/agent-decision.test.js for the policy scenarios.
