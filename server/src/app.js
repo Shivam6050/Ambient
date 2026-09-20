@@ -30,11 +30,21 @@ app.use('/api/context', contextRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/actions', actionRoutes);
 
+// Ensure MongoDB connection in serverless / on-demand environments
+app.use(async (_req, _res, next) => {
+  if (env.mongoUri && !isDBConnected()) {
+    try {
+      await connectDB();
+    } catch {}
+  }
+  next();
+});
+
 // Centralized error handling
 app.use(errorMiddleware);
 
-// Server startup for non-test environments
-if (process.env.NODE_ENV !== 'test') {
+// Server startup for non-test, non-serverless environments
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   connectDB().catch((err) => {
     console.error('Initial MongoDB connection attempt error:', err.message);
   });
