@@ -1,32 +1,46 @@
-import { agentStatus } from './services/agent/decisionService.js';
 import express from 'express';
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import cors from 'cors';
+import { env } from './config/env.js';
+import { connectDB, isDBConnected } from './config/db.js';
 import eventRoutes from './routes/event.routes.js';
 import contextRoutes from './routes/context.routes.js';
-import { readContext } from './services/context/contextService.js';
-import { reevaluateDeferred } from './services/events/eventService.js';
-import { serialize } from './services/serialize.js';
-dotenv.config();
-mongoose.set('bufferCommands', false);
-await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/ambient', { serverSelectionTimeoutMS: 5000, writeConcern: { w: 1, j: true } });
-await reevaluateDeferred(await readContext());
+import agentRoutes from './routes/agent.routes.js';
+import actionRoutes from './routes/action.routes.js';
+import { errorMiddleware } from './middleware/error.middleware.js';
+
 const app = express();
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
+
+app.use(cors({ origin: env.clientOrigin || '*' }));
 app.use(express.json());
-app.get('/api/health', (_, res) => res.status(mongoose.connection.readyState === 1 ? 200 : 503).json({ success: mongoose.connection.readyState === 1, service: 'ambient-server', storage: 'mongodb' }));
-app.get('/api/agent/status', (_, res) => res.json({ success: true, data: agentStatus() }));
+
+// Unified Health Check endpoint
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    service: 'ambient-server',
+    status: 'ok',
+    storage: isDBConnected() ? 'mongodb' : 'in-memory',
+    aiProvider: env.aiProvider
+  });
+});
+
+// Mounted feature routers
 app.use('/api/events', eventRoutes);
 app.use('/api/context', contextRoutes);
-app.use((error, req, res, next) => {
-  console.error(error.name, error.message);
-  res.status(503).json({ success: false, message: 'Could not save or load data. Check MongoDB and retry.' });
-});
-// Repair a partial context-update/re-evaluation if the DB briefly disconnects.
-const recovery = setInterval(() => serialize(async () => reevaluateDeferred(await readContext())).catch(error => console.error('Recovery:', error.message)), 5000);
-const server = app.listen(process.env.PORT || 5000, () => console.log('Ambient server ready with MongoDB persistence'));
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
-  clearInterval(recovery);
-  server.close(async () => { await serialize(async () => {}); await mongoose.disconnect(); process.exit(0); });
-});
+app.use('/api/agent', agentRoutes);
+app.use('/api/actions', actionRoutes);
+
+// Centralized error handling
+app.use(errorMiddleware);
+
+// Server startup for non-test environments
+if (process.env.NODE_ENV !== 'test') {
+  connectDB().catch((err) => {
+    console.error('Initial MongoDB connection attempt error:', err.message);
+  });
+  app.listen(env.port, () => {
+    console.log(`Ambient server ready on http://localhost:${env.port} (AI: ${env.aiProvider})`);
+  });
+}
+
+export default app;

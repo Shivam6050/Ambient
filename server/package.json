@@ -1,11 +1,15 @@
 {
   "name": "ambient-server",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
-    "db": "node scripts/local-db.js"
+    "db": "node scripts/local-db.js",
+    "test": "node --test test/*.test.js",
+    "test:policy": "node --test test/agent-decision.test.js",
+    "test:lifecycle": "node --test test/event-lifecycle.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1133.0",

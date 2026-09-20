@@ -1,7 +1,10 @@
 import { Router } from 'express';
-import { createEvent, getEvents, dismiss } from '../controllers/event.controller.js';
+import { createEvent, getEventsList, getEventHistory, dismiss } from '../controllers/event.controller.js';
+
 const router = Router();
-router.get('/', getEvents);
+router.get('/', getEventsList);
 router.post('/', createEvent);
+router.get('/history', getEventHistory);
 router.post('/:id/dismiss', dismiss);
+
 export default router;

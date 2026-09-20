@@ -1,1 +1,17 @@
-{"name":"ambient","version":"0.1.0","private":true,"scripts":{"dev":"concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\"","setup":"npm install --prefix server && npm install --prefix client","build":"npm run build --prefix client"},"devDependencies":{"concurrently":"^9.2.1"}}
+{
+  "name": "ambient",
+  "version": "0.7.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\"",
+    "setup": "npm install --prefix server && npm install --prefix client",
+    "build": "npm run build --prefix client",
+    "db": "npm run db --prefix server",
+    "test": "npm test --prefix server",
+    "test:policy": "npm run test:policy --prefix server",
+    "test:lifecycle": "npm run test:lifecycle --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

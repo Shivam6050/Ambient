@@ -1,36 +1,52 @@
 import Event from '../../models/Event.js';
-import Record from '../../models/EventRecord.js';
-import { evaluateDecision } from '../agent/decisionService.js';
-import { readContext } from '../context/contextService.js';
-export async function processEvent(payload) {
-  if (!payload || !['package_delivered', 'security_alert'].includes(payload.type)) throw new Error('Choose a supported demo event.');
-  const document = new Event(payload);
-  await document.validate();
-  const event = document.toObject();
-  const context = await readContext();
-  const decision = await evaluateDecision({ event, context });
-  return Record.create({ id: String(event._id), event, context, decision,
-    status: decision.decision === 'WAIT' ? 'deferred' : 'notified',
-    timeline: [{ at: new Date(), action: 'RECEIVED', reason: 'Simulated device event received.' }, { at: new Date(), action: decision.decision, reason: decision.reason, source: decision.source, policyReason: decision.policyReason }]
-  });
+import EventRecord from '../../models/EventRecord.js';
+import { evaluateEvent } from '../agent/agent.service.js';
+import { updateRememberedEvent, getRecentEvents } from './eventMemory.js';
+
+export async function processEvent(payload, context, userId = 'demo-user') {
+  return evaluateEvent(payload, context, userId);
 }
-export function listEvents() { return Record.find().sort({ createdAt: -1, _id: -1 }).lean(); }
-export async function reevaluateDeferred(context) {
-  if (context.availability !== 'available') return;
-  const records = await Record.find({ status: 'deferred' }).lean();
-  for (const record of records) {
-    const decision = await evaluateDecision({ event: record.event, context, status: record.status });
-    // The status condition and timeline update are one atomic write.
-    await Record.updateOne({ id: record.id, status: 'deferred' }, {
-      $set: { context, decision, status: 'notified' },
-      $push: { timeline: { at: new Date(), action: 'NOTIFY', reason: decision.reason, source: decision.source, policyReason: decision.policyReason } }
-    });
+
+export async function listEvents(userId = 'demo-user') {
+  if (EventRecord.db?.readyState === 1) {
+    const records = await EventRecord.find().sort({ createdAt: -1, _id: -1 }).lean();
+    if (records.length) return records;
   }
+  if (Event.db?.readyState === 1) {
+    return Event.find({ userId }).sort({ occurredAt: -1 }).lean();
+  }
+  return getRecentEvents(userId);
 }
-export async function dismissEvent(id) {
-  const updated = await Record.findOneAndUpdate({ id, status: { $ne: 'dismissed' } }, {
-    $set: { status: 'dismissed' },
-    $push: { timeline: { at: new Date(), action: 'DISMISSED', reason: 'Dismissed by you.' } }
-  }, { new: true }).lean();
-  return updated || Record.findOne({ id }).lean();
+
+export async function reevaluateDeferred(context, userId = 'demo-user') {
+  if (context?.availability !== 'available') return;
+  const { reEvaluateWaitingEvents } = await import('./reEvaluation.service.js');
+  return reEvaluateWaitingEvents(userId);
+}
+
+export async function dismissEvent(id, userId = 'demo-user') {
+  let updated = null;
+
+  if (EventRecord.db?.readyState === 1) {
+    updated = await EventRecord.findOneAndUpdate(
+      { id, status: { $ne: 'dismissed' } },
+      {
+        $set: { status: 'dismissed' },
+        $push: { timeline: { at: new Date(), action: 'DISMISSED', reason: 'Dismissed by user.' } }
+      },
+      { new: true }
+    ).lean();
+  }
+
+  if (Event.db?.readyState === 1) {
+    const event = await Event.findByIdAndUpdate(
+      id,
+      { $set: { status: 'dismissed' } },
+      { new: true }
+    ).lean();
+    if (event && !updated) updated = event;
+  }
+
+  const remembered = updateRememberedEvent(id, { status: 'dismissed' }, userId);
+  return updated || remembered || { id, status: 'dismissed' };
 }
