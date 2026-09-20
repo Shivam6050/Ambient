@@ -17,6 +17,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('Ready for a context-aware event.');
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [awsInsight, setAwsInsight] = useState(null);
+  const [awsLoading, setAwsLoading] = useState(false);
 
   const load = async () => {
     try {
@@ -43,6 +45,7 @@ function App() {
   const applyContext = async (availability) => {
     setLoading(true);
     setAlexa(null);
+    setAwsInsight(null);
     try {
       const res = await fetch(`${API}/context`, {
         method: 'PATCH',
@@ -71,9 +74,32 @@ function App() {
     }
   };
 
+  const generateAwsInsight = async () => {
+    if (!result) return;
+    setAwsLoading(true);
+    try {
+      const res = await fetch(`${API}/agent/insight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: result.event, context: result.context, decision: result.decision })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'AWS Bedrock request failed');
+      setAwsInsight(json.data);
+      setNotice(json.data.enabled
+        ? 'Amazon Bedrock generated an explanation without changing the decision.'
+        : 'AWS Bedrock is disabled; no inference was made.');
+    } catch (error) {
+      setNotice(`AWS Bedrock: ${error.message}`);
+    } finally {
+      setAwsLoading(false);
+    }
+  };
+
   const simulate = async (type) => {
     setLoading(true);
     setAlexa(null);
+    setAwsInsight(null);
     try {
       const event = {
         source: 'ring',
@@ -126,7 +152,7 @@ function App() {
   return (
     <main>
       <header>
-        <div className="brand"><span className="brandDot" /> AMBIENT <span className="version">v0.7</span></div>
+        <div className="brand"><span className="brandDot" /> AMBIENT <span className="version">v0.8</span></div>
         <div className="headerRight">
           <span className="muted">Alexa+ simulated experience</span>
           <span className={`status ${status === 'BUSY' ? 'busy' : ''}`}>{status}</span>
@@ -245,6 +271,24 @@ function App() {
               <div><b>Action</b><span>{pretty(result.action?.status || 'none')}</span></div>
             </div>
           </div>
+        </section>
+      )}
+
+      {result && (
+        <section className="card awsCard">
+          <div className="sectionTop"><div><p className="eyebrow">AWS BUILDER · BEDROCK</p><h2>Explain the moment</h2></div><span className="awsBadge">NOVA LITE</span></div>
+          <p className="muted">Amazon Bedrock is an explanation layer only. It cannot change the decision, policy, or action.</p>
+          {!awsInsight ? (
+            <button className="awsButton" onClick={generateAwsInsight} disabled={awsLoading}>
+              {awsLoading ? 'Calling Amazon Bedrock…' : 'Generate AWS insight'}
+            </button>
+          ) : (
+            <div className="awsInsight">
+              <div className="awsInsightTop"><span>Amazon Bedrock</span><span>{awsInsight.enabled ? `${awsInsight.region} · ${awsInsight.model}` : 'disabled'}</span></div>
+              <p>{awsInsight.text}</p>
+              {awsInsight.usage && <small>Tokens · input {awsInsight.usage.inputTokens ?? '—'} · output {awsInsight.usage.outputTokens ?? '—'}</small>}
+            </div>
+          )}
         </section>
       )}
 

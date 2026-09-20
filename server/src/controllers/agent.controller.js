@@ -1,6 +1,7 @@
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { evaluateEvent } from '../services/agent/agent.service.js';
+import { generateAmbientInsight } from '../services/agent/bedrock.service.js';
 import { env } from '../config/env.js';
 
 export const evaluateAgent = asyncHandler(async (req, res) => {
@@ -10,6 +11,15 @@ export const evaluateAgent = asyncHandler(async (req, res) => {
   }
   const result = await evaluateEvent(event, context, userId || 'demo-user');
   return ApiResponse(res, 200, result, 'Ambient evaluated the event');
+});
+
+export const generateInsight = asyncHandler(async (req, res) => {
+  const { event, context, decision } = req.body;
+  if (!event || !context || !decision) {
+    return res.status(400).json({ success: false, message: 'event, context and decision are required' });
+  }
+  const insight = await generateAmbientInsight({ event, context, decision });
+  return ApiResponse(res, 200, insight, 'AWS Bedrock insight generated');
 });
 
 export const getAgentStatus = asyncHandler(async (_req, res) => {

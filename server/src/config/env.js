@@ -9,6 +9,7 @@ export const env = {
   typesafeApiKey: process.env.TYPESAFE_API_KEY || '',
   jevModel: process.env.JEV_MODEL || 'jev-latest',
   jevBaseUrl: process.env.JEV_BASE_URL || 'https://api.typesafe.ai/v1/systemone',
-  awsRegion: process.env.AWS_REGION || '',
-  bedrockModelId: process.env.BEDROCK_MODEL_ID || ''
+  awsEnabled: String(process.env.AWS_BEDROCK_ENABLED || 'false').toLowerCase() === 'true',
+  awsRegion: process.env.AWS_REGION || 'us-east-1',
+  bedrockModelId: process.env.BEDROCK_MODEL_ID || 'amazon.nova-lite-v1:0'
 };

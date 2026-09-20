@@ -706,3 +706,14 @@ footer {
     flex-direction: column;
   }
 }
+
+/* AWS Builder · Bedrock */
+.awsCard { border-color: rgba(255,255,255,.14); }
+.awsBadge { font-size:11px; letter-spacing:.12em; padding:7px 10px; border:1px solid rgba(255,255,255,.14); border-radius:999px; }
+.awsButton { width:100%; margin-top:18px; padding:14px 16px; border:1px solid rgba(255,255,255,.16); border-radius:12px; background:rgba(255,255,255,.06); color:inherit; cursor:pointer; font-weight:700; }
+.awsButton:hover:not(:disabled) { background:rgba(255,255,255,.11); }
+.awsButton:disabled { opacity:.55; cursor:wait; }
+.awsInsight { margin-top:18px; padding:18px; border-radius:14px; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.1); }
+.awsInsightTop { display:flex; justify-content:space-between; gap:12px; font-size:12px; opacity:.7; margin-bottom:10px; }
+.awsInsight p { margin:0 0 10px; line-height:1.65; }
+.awsInsight small { opacity:.55; }
