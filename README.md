@@ -4,7 +4,7 @@
 
 Ambient is a context-aware agentic orchestration prototype for the Amazon Developer Hackathon. It demonstrates a simple product thesis: an assistant should reason about the user's current moment before deciding whether to interrupt, wait, ask, or ignore.
 
-## v0.8.2 — runtime cleanup and deployment hardening
+## v0.9.0 — MCP + integration boundaries
 
 This version removes the remaining duplicate legacy service implementations and simplifies Vercel routing so /api/* requests reach the Express serverless entry point directly. The runtime path is now:
 
@@ -40,10 +40,22 @@ Amazon Bedrock is **not** the primary decision engine. It is an optional AWS Bui
 | In-memory fallback | Real local implementation |
 | Jev API | Real integration when configured |
 | Amazon Bedrock | Real SDK integration when enabled |
-| Alexa+ experience | Simulated web experience |
-| Ring events/device | Simulated |
-| Physical Ring device | Not required |
-| MCP server | Not implemented in this version |
+| Alexa+ experience | MCP-ready adapter + simulator fallback |
+| Ring events/device | Partner API webhook boundary + simulator |
+| Physical Ring device | Live access requires Ring partner onboarding |
+| MCP server | Implemented — Streamable HTTP |
+
+## MCP server
+
+Start a second terminal with:
+
+`npm.cmd run mcp`
+
+The local Streamable HTTP endpoint is `http://127.0.0.1:5100/mcp`. It exposes Ambient evaluation, context, waiting-memory, decision-history, and action-capability tools. See `docs/mcp.md`.
+
+## Ring partner boundary
+
+Ambient v0.9 adds `POST /api/integrations/ring/webhook` with raw-body HMAC-SHA256 verification and a Ring API adapter. Live use still requires Ring developer onboarding, OAuth account linking, client credentials, HMAC key, and HTTPS endpoints. See `docs/ring-integration.md`.
 
 ## Zero-setup local run
 
