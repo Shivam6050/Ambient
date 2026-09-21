@@ -4,9 +4,9 @@
 
 Ambient is a context-aware agentic orchestration prototype for the Amazon Developer Hackathon. It demonstrates a simple product thesis: an assistant should reason about the user's current moment before deciding whether to interrupt, wait, ask, or ignore.
 
-## v0.8.1 — repository consolidation
+## v0.8.2 — runtime cleanup and deployment hardening
 
-This version intentionally removes the earlier overlapping decision services. The runtime path is now:
+This version removes the remaining duplicate legacy service implementations and simplifies Vercel routing so /api/* requests reach the Express serverless entry point directly. The runtime path is now:
 
 ```text
 Ring simulator / event
@@ -137,7 +137,7 @@ These are application thresholds, not model guarantees. They should be empirical
 
 ## Persistence
 
-Without `MONGODB_URI`, Ambient uses user-scoped in-memory state. This is the fastest local demo mode.
+Without `MONGODB_URI`, Ambient uses the single active user-scoped in-memory adapter at `server/src/services/events/memory.js`. This is the fastest local demo mode.
 
 With MongoDB:
 
