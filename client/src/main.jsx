@@ -89,7 +89,7 @@ function App() {
   const priorityLabels = ['low', 'medium', 'high', 'critical'];
 
   return <main>
-    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.8.1</em></div><div className="headerStatus"><span>Alexa+ simulated experience</span><b className={busy ? 'busy' : ''}>{busy ? 'BUSY' : 'AVAILABLE'}</b></div></header>
+    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>Alexa+ · MCP-ready</span><b className={busy ? 'busy' : ''}>{busy ? 'BUSY' : 'AVAILABLE'}</b></div></header>
 
     <section className="hero"><p className="eyebrow">THE ASSISTANT THAT KNOWS WHEN TO ACT</p><h1>Understand the <span>moment.</span><br/>Then decide when to act.</h1><p>Ambient combines context, bounded AI judgment, deterministic policy, confidence gating, memory, and simulated device actions into one transparent orchestration loop.</p><div className="loop">EVENT <i>→</i> CONTEXT <i>→</i> JEV <i>→</i> POLICY <i>→</i> GATE <i>→</i> ACTION</div></section>
 
