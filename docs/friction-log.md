@@ -3,4 +3,4 @@
 | Date | Tool | Task | Expected | Actual | Severity | Workaround | Suggestion |
 |---|---|---|---|---|---|---|---|
 
-Document real Amazon/AWS developer friction as we encounter it. Do not invent entries.
+Record real developer friction here. The hackathon submission should show observed friction rather than placeholders presented as completed research.

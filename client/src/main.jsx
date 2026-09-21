@@ -1,374 +1,125 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
 const API = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 const USER = 'demo-user';
+const pretty = (v = '') => String(v).replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+const pct = v => `${Math.round((Number(v) || 0) * 100)}%`;
 
-const pretty = (value = '') => String(value).replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-const pct = (value) => `${Math.round((Number(value) || 0) * 100)}%`;
+async function request(path, options = {}) {
+  const res = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || `Request failed (${res.status})`);
+  return body;
+}
 
 function App() {
   const [context, setContext] = useState(null);
-  const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
   const [waiting, setWaiting] = useState([]);
-  const [alexa, setAlexa] = useState(null);
+  const [result, setResult] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const [insight, setInsight] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('Ready for a context-aware event.');
-  const [selectedDetail, setSelectedDetail] = useState(null);
-  const [awsInsight, setAwsInsight] = useState(null);
-  const [awsLoading, setAwsLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const [contextRes, historyRes] = await Promise.all([
-        fetch(`${API}/context?userId=${USER}`),
-        fetch(`${API}/events/history?userId=${USER}`)
+      const [ctx, hist] = await Promise.all([
+        request(`/context?userId=${USER}`),
+        request(`/events/history?userId=${USER}`)
       ]);
-      const contextJson = await contextRes.json();
-      const historyJson = await historyRes.json();
-      setContext(contextJson.data?.context || contextJson.data);
-      setHistory(historyJson.data?.decisions || []);
-      setWaiting(historyJson.data?.waiting || []);
-    } catch {
-      setNotice('Backend is not reachable. Start the server on port 5000.');
-    }
-  };
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 3000);
-    return () => clearInterval(interval);
+      setContext(ctx.data?.context || ctx.data);
+      setHistory(hist.data?.decisions || []);
+      setWaiting(hist.data?.waiting || []);
+    } catch (e) { setNotice(`Backend unavailable: ${e.message}`); }
   }, []);
 
-  const applyContext = async (availability) => {
-    setLoading(true);
-    setAlexa(null);
-    setAwsInsight(null);
+  useEffect(() => { load(); const timer = setInterval(load, 3000); return () => clearInterval(timer); }, [load]);
+
+  const applyContext = async availability => {
+    setLoading(true); setNotification(null); setInsight(null);
     try {
-      const res = await fetch(`${API}/context`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          availability,
-          activity: availability === 'busy' ? 'meeting' : 'idle',
-          location: 'home',
-          userId: USER
-        })
-      });
-      const json = await res.json();
+      const json = await request('/context', { method: 'PATCH', body: JSON.stringify({ userId: USER, availability, activity: availability === 'busy' ? 'meeting' : 'idle', location: 'home' }) });
       const results = json.data?.results || [];
       if (results.length) {
-        const latest = results[results.length - 1];
-        setResult(latest);
-        const notification = [...results].reverse().find((item) => item.action?.status === 'ready');
-        if (notification) setAlexa(notification);
-        setNotice(`Context changed. ${results.length} waiting event${results.length > 1 ? 's' : ''} re-evaluated.`);
-      } else {
-        setNotice(availability === 'busy' ? 'Meeting mode enabled. Non-critical events will wait.' : 'You are available. Ambient will reconsider anything waiting.');
-      }
+        const latest = results.at(-1); setResult(latest);
+        const ready = [...results].reverse().find(r => r.action?.status === 'ready');
+        if (ready) setNotification(ready);
+        setNotice(`Context changed. ${json.data.reEvaluated} waiting event${json.data.reEvaluated === 1 ? '' : 's'} re-evaluated.`);
+      } else setNotice(availability === 'busy' ? 'Meeting mode enabled. Routine events will wait.' : 'You are available. Waiting events will be reconsidered.');
       await load();
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setNotice(e.message); } finally { setLoading(false); }
   };
 
-  const generateAwsInsight = async () => {
-    if (!result) return;
-    setAwsLoading(true);
+  const simulate = async type => {
+    setLoading(true); setNotification(null); setInsight(null);
     try {
-      const res = await fetch(`${API}/agent/insight`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: result.event, context: result.context, decision: result.decision })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'AWS Bedrock request failed');
-      setAwsInsight(json.data);
-      setNotice(json.data.enabled
-        ? 'Amazon Bedrock generated an explanation without changing the decision.'
-        : 'AWS Bedrock is disabled; no inference was made.');
-    } catch (error) {
-      setNotice(`AWS Bedrock: ${error.message}`);
-    } finally {
-      setAwsLoading(false);
-    }
-  };
-
-  const simulate = async (type) => {
-    setLoading(true);
-    setAlexa(null);
-    setAwsInsight(null);
-    try {
-      const event = {
-        source: 'ring',
-        type,
-        priority: type === 'security_alert' ? 'critical' : 'medium',
-        metadata: { location: 'front_door', device: 'ring_simulator' }
-      };
-      const res = await fetch(`${API}/agent/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event, userId: USER })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Evaluation failed');
+      const event = { source: 'ring', type, priority: type === 'security_alert' ? 'critical' : 'medium', metadata: { location: 'front_door', device: 'ring_simulator' } };
+      const json = await request('/agent/evaluate', { method: 'POST', body: JSON.stringify({ event, userId: USER }) });
       setResult(json.data);
-      if (json.data.action?.status === 'ready') setAlexa(json.data);
-      setNotice(json.data.decision?.decision === 'WAIT'
-        ? 'Ambient remembered the event instead of interrupting you.'
-        : `Ambient chose ${json.data.decision?.decision} and routed the result.`);
+      if (json.data.action?.status === 'ready') setNotification(json.data);
+      setNotice(json.data.decision?.decision === 'WAIT' ? 'Ambient remembered the event instead of interrupting you.' : `Ambient chose ${json.data.decision?.decision}.`);
       await load();
-    } catch (error) {
-      setNotice(error.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setNotice(e.message); } finally { setLoading(false); }
   };
 
-  const dismiss = async (eventId) => {
-    if (!eventId) return;
+  const dismiss = async item => {
+    const id = item?.event?._id || item?.event?.id;
+    if (!id) return;
+    setLoading(true);
+    try { await request(`/events/${id}/dismiss?userId=${USER}`, { method: 'POST' }); setNotification(null); setNotice('Event dismissed.'); await load(); }
+    catch (e) { setNotice(e.message); } finally { setLoading(false); }
+  };
+
+  const generateInsight = async () => {
+    if (!result) return;
     setLoading(true);
     try {
-      await fetch(`${API}/events/${eventId}/dismiss`, { method: 'POST' });
-      if (alexa?.event?._id === eventId || alexa?.event?.id === eventId) {
-        setAlexa(null);
-      }
-      setNotice('Event dismissed.');
-      await load();
-    } catch (err) {
-      setNotice(`Could not dismiss: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
+      const json = await request('/agent/insight', { method: 'POST', body: JSON.stringify({ event: result.event, context: result.context, decision: result.decision }) });
+      setInsight(json.data); setNotice(json.data.enabled ? 'Bedrock explained the decision without changing it.' : 'Bedrock is disabled; no AWS inference was made.');
+    } catch (e) { setNotice(`Bedrock: ${e.message}`); } finally { setLoading(false); }
   };
 
-  const status = context?.availability === 'busy' ? 'BUSY' : 'AVAILABLE';
-  const lastWaiting = waiting[0];
-  const decisionDistribution = result?.decision?.jev?.probabilities?.decision || {};
-  const priorityDistribution = result?.decision?.jev?.probabilities?.priority || {};
+  const busy = context?.availability === 'busy';
+  const decisionDist = result?.decision?.jev?.probabilities?.decision || {};
+  const priorityDist = result?.decision?.jev?.probabilities?.priority || {};
+  const priorityLabels = ['low', 'medium', 'high', 'critical'];
 
-  return (
-    <main>
-      <header>
-        <div className="brand"><span className="brandDot" /> AMBIENT <span className="version">v0.8</span></div>
-        <div className="headerRight">
-          <span className="muted">Alexa+ simulated experience</span>
-          <span className={`status ${status === 'BUSY' ? 'busy' : ''}`}>{status}</span>
-        </div>
-      </header>
+  return <main>
+    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.8.1</em></div><div className="headerStatus"><span>Alexa+ simulated experience</span><b className={busy ? 'busy' : ''}>{busy ? 'BUSY' : 'AVAILABLE'}</b></div></header>
 
-      <section className="hero">
-        <div className="heroCopy">
-          <p className="eyebrow">THE ASSISTANT THAT KNOWS WHEN TO ACT</p>
-          <h1>Don't just understand the event.<br /><span>Understand the moment.</span></h1>
-          <p className="lead">Ambient watches what happens around you, reads your current moment, asks the decision model for a bounded choice, validates it with deterministic policy, and acts only when timing makes sense.</p>
-        </div>
-        <div className="heroLoop">
-          <span>EVENT</span><i>→</i><span>CONTEXT</span><i>→</i><span>AI</span><i>→</i><span>POLICY</span><i>→</i><span>ACTION</span>
-        </div>
-      </section>
+    <section className="hero"><p className="eyebrow">THE ASSISTANT THAT KNOWS WHEN TO ACT</p><h1>Understand the <span>moment.</span><br/>Then decide when to act.</h1><p>Ambient combines context, bounded AI judgment, deterministic policy, confidence gating, memory, and simulated device actions into one transparent orchestration loop.</p><div className="loop">EVENT <i>→</i> CONTEXT <i>→</i> JEV <i>→</i> POLICY <i>→</i> GATE <i>→</i> ACTION</div></section>
 
-      <section className="statusBar">
-        <span className="statusPulse" /> {notice}
-      </section>
+    <div className="notice">● {notice}</div>
 
-      <div className="grid two">
-        <section className="card">
-          <div className="sectionTop"><div><p className="eyebrow">01 · MOMENT</p><h2>What are you doing?</h2></div><span className="live">● LIVE</span></div>
-          <div className="moment">
-            <div className={`momentIcon ${status === 'BUSY' ? 'busyIcon' : ''}`}>{status === 'BUSY' ? '◉' : '○'}</div>
-            <div><strong>{status === 'BUSY' ? 'In a meeting' : 'Available'}</strong><span>{context?.location || 'home'} · {context?.activity || 'idle'}</span></div>
-          </div>
-          <div className="actions">
-            <button onClick={() => applyContext('busy')} disabled={loading || status === 'BUSY'}>Start meeting</button>
-            <button onClick={() => applyContext('available')} disabled={loading || status === 'AVAILABLE'}>End meeting</button>
-          </div>
-        </section>
+    <section className="two"><Panel title="01 · MOMENT" heading="What are you doing?"><div className="moment"><div className={`momentIcon ${busy ? 'busy' : ''}`}>{busy ? '◉' : '○'}</div><div><strong>{busy ? 'In a meeting' : 'Available'}</strong><small>{context?.location || 'home'} · {context?.activity || 'idle'}</small></div></div><div className="buttons"><button disabled={loading || busy} onClick={() => applyContext('busy')}>Start meeting</button><button disabled={loading || !busy} onClick={() => applyContext('available')}>End meeting</button></div></Panel>
+      <Panel title="02 · EVENT" heading="What just happened?"><div className="events"><button onClick={() => simulate('package_delivered')} disabled={loading}><span>📦</span><div><b>Package delivered</b><small>Routine · front door · Ring simulator</small></div></button><button onClick={() => simulate('security_alert')} disabled={loading}><span>🚨</span><div><b>Security alert</b><small>Critical · front door · Ring simulator</small></div></button></div><small className="muted">The Ring device is simulated for the hackathon demo.</small></Panel></section>
 
-        <section className="card">
-          <div className="sectionTop"><div><p className="eyebrow">02 · EVENT</p><h2>What just happened?</h2></div><span className="muted">Ring simulator</span></div>
-          <div className="eventButtons">
-            <button className="eventButton primary" onClick={() => simulate('package_delivered')} disabled={loading}>
-              <span>📦</span>
-              <div><b>Package delivered</b><small>Non-critical · front door</small></div>
-            </button>
-            <button className="eventButton danger" onClick={() => simulate('security_alert')} disabled={loading}>
-              <span>🚨</span>
-              <div><b>Security alert</b><small>Critical · front door</small></div>
-            </button>
-          </div>
-          <p className="muted small">Evaluates action, urgency, and interruption probability against current context.</p>
-        </section>
-      </div>
+    {notification && <section className="notification"><div className="notifTop"><div className="orb">A</div><div><p className="eyebrow">ALEXA+ · USER MOMENT</p><h2>Ambient has something for you</h2></div><b>READY</b></div><div className="message">{notification.action?.message || `Your ${pretty(notification.event?.type)} needs your attention.`}</div><div className="chips"><span>Decision · {notification.decision?.decision}</span><span>Confidence · {pct(notification.decision?.confidence)}</span><span>Source · {notification.decision?.source}</span></div><div className="buttons"><button onClick={() => setSelected(notification)}>Show details →</button><button onClick={() => dismiss(notification)}>Dismiss</button></div></section>}
 
-      {alexa && (
-        <section className="alexaCard reveal">
-          <div className="alexaTop">
-            <span className="alexaOrb">A</span>
-            <div><p className="eyebrow">ALEXA+ · USER MOMENT</p><h2>Ambient has something for you</h2></div>
-            <span className="readyBadge">READY</span>
-          </div>
-          <div className="alexaMessage">{alexa.action?.message || `Notification: ${pretty(alexa.event?.type)}`}</div>
-          <div className="alexaMeta">
-            <span>Target · Alexa+</span>
-            <span>Decision · {alexa.decision?.decision}</span>
-            <span>Confidence · {pct(alexa.decision?.confidence)}</span>
-            <span>Source · {alexa.decision?.source}</span>
-          </div>
-          <div className="alexaActions">
-            <button className="showButton" onClick={() => setSelectedDetail(alexa)}>Show details <span>→</span></button>
-            <button className="dismissButton" onClick={() => dismiss(alexa.event?._id || alexa.event?.id)}>Dismiss</button>
-          </div>
-        </section>
-      )}
+    {waiting[0] && <section className="waiting"><div><p className="eyebrow">MEMORY · DEFERRED</p><h2>Ambient is waiting for the right moment.</h2><p>{pretty(waiting[0].type)} was stored because interrupting a meeting is unnecessary.</p></div><strong>WAIT<small>re-evaluate on context change</small></strong></section>}
 
-      {lastWaiting && (
-        <section className="waitingCard reveal">
-          <div>
-            <p className="eyebrow">MEMORY · DEFERRED</p>
-            <h2>Ambient is waiting for the right moment.</h2>
-            <p>{pretty(lastWaiting.type)} is remembered because interrupting you during a meeting is unnecessary.</p>
-          </div>
-          <div className="waitingBadge"><span>WAIT</span><small>re-evaluate on context change</small></div>
-        </section>
-      )}
+    {result && <>
+      <section className="decisionGrid"><Panel title="03 · DECISION BRAIN" heading="Decision Engine"><div className="decision"><strong>{result.decision?.decision}</strong><span>{pretty(result.event?.type)}</span></div><p className="reason">{result.decision?.reason}</p><div className="chips"><span>Urgency · {result.decision?.priority}</span><span>Confidence · {pct(result.decision?.confidence)}</span><span>Gate · {result.decision?.gate?.mode || 'AUTO'}</span><span>Source · {result.decision?.source}</span></div><div className="suggested">Suggested action<b>{result.decision?.suggestedAction}</b></div></Panel>
+        <Panel title="DECISION TRACE" heading="Why this happened?"><div className="trace">{[['Event', pretty(result.event?.type)],['Context', `${pretty(result.context?.availability)} · ${pretty(result.context?.activity)}`],['Model', `${result.decision?.decision} · ${pct(result.decision?.confidence)}`],['Policy', result.decision?.policyReason || 'validated pass-through'],['Action', pretty(result.action?.status || 'none')]].map(([a,b],i)=><React.Fragment key={a}><div><b>{a}</b><span>{b}</span></div>{i<4&&<i>↓</i>}</React.Fragment>)}</div></Panel></section>
 
-      {result && (
-        <section className="decisionGrid">
-          <div className="card decisionCard">
-            <div className="sectionTop">
-              <div><p className="eyebrow">03 · DECISION BRAIN</p><h2>Decision Engine</h2></div>
-              <span className="confidence">{pct(result.decision?.confidence)} confidence</span>
-            </div>
-            <div className="decisionTitle">
-              <strong>{result.decision?.decision}</strong>
-              <span>{pretty(result.event?.type)}</span>
-            </div>
-            <p className="reason">{result.decision?.reason}</p>
-            <div className="chips">
-              <span>urgency · {result.decision?.priority}</span>
-              {result.decision?.jev?.interruptProbability !== undefined && <span>interrupt · {pct(result.decision.jev.interruptProbability)}</span>}
-              <span>source · {result.decision?.source}</span>
-              <span>gate · {result.decision?.gate?.mode || 'AUTO'}</span>
-            </div>
-            <div className="suggested">Suggested action <b>{result.decision?.suggestedAction}</b></div>
-            {result.decision?.gate && <div className="gateNote">Confidence gate · {result.decision.gate.mode} · {result.decision.gate.reason}</div>}
-          </div>
+      <section className="panel"><div className="panelTop"><div><p className="eyebrow">AWS BUILDER · AMAZON BEDROCK</p><h2>Explain the moment</h2></div><span className="badge">NOVA LITE</span></div><p className="muted">Bedrock is an explanation layer only. It cannot change Jev's decision or deterministic policy.</p>{!insight ? <button className="wide" onClick={generateInsight} disabled={loading}>Generate AWS insight</button> : <div className="insight"><b>{insight.enabled ? `${insight.region} · ${insight.model}` : 'Bedrock disabled'}</b><p>{insight.text}</p></div>}</section>
 
-          <div className="card traceCard">
-            <p className="eyebrow">DECISION TRACE</p><h2>Why this happened</h2>
-            <div className="trace">
-              <div><b>Event</b><span>{pretty(result.event?.type)}</span></div>
-              <i>↓</i>
-              <div><b>Context</b><span>{pretty(result.context?.availability)} · {pretty(result.context?.activity)}</span></div>
-              <i>↓</i>
-              <div><b>Model</b><span>{result.decision?.decision} ({pct(result.decision?.confidence)})</span></div>
-              <i>↓</i>
-              <div><b>Policy</b><span>{result.decision?.source?.includes('policy') ? 'Override rules enforced' : 'Validated pass-through'}</span></div>
-              <i>↓</i>
-              <div><b>Action</b><span>{pretty(result.action?.status || 'none')}</span></div>
-            </div>
-          </div>
-        </section>
-      )}
+      {result.decision?.jev && <section className="panel"><div className="panelTop"><div><p className="eyebrow">DECISION SIGNALS</p><h2>Typed model outputs</h2></div><span className="muted">No prose parsing</span></div><div className="signals"><Distribution title="Action" data={decisionDist} selected={result.decision.decision}/><Distribution title="Urgency" data={priorityDist} selected={result.decision.priority} priority/><div className="signal"><label>Should interrupt?</label><strong>{pct(result.decision.jev.interruptProbability)}</strong><small>Noul probability</small><div className="meter"><i style={{width:pct(result.decision.jev.interruptProbability)}}/></div></div></div></section>}
+    </>}
 
-      {result && (
-        <section className="card awsCard">
-          <div className="sectionTop"><div><p className="eyebrow">AWS BUILDER · BEDROCK</p><h2>Explain the moment</h2></div><span className="awsBadge">NOVA LITE</span></div>
-          <p className="muted">Amazon Bedrock is an explanation layer only. It cannot change the decision, policy, or action.</p>
-          {!awsInsight ? (
-            <button className="awsButton" onClick={generateAwsInsight} disabled={awsLoading}>
-              {awsLoading ? 'Calling Amazon Bedrock…' : 'Generate AWS insight'}
-            </button>
-          ) : (
-            <div className="awsInsight">
-              <div className="awsInsightTop"><span>Amazon Bedrock</span><span>{awsInsight.enabled ? `${awsInsight.region} · ${awsInsight.model}` : 'disabled'}</span></div>
-              <p>{awsInsight.text}</p>
-              {awsInsight.usage && <small>Tokens · input {awsInsight.usage.inputTokens ?? '—'} · output {awsInsight.usage.outputTokens ?? '—'}</small>}
-            </div>
-          )}
-        </section>
-      )}
+    <section className="panel"><div className="panelTop"><div><p className="eyebrow">MEMORY</p><h2>Decision history</h2></div><span className="muted">Latest 20</span></div>{history.length ? history.map((d,i)=><div className="history" key={d._id || `${d.createdAt}-${i}`}><span>{String(i+1).padStart(2,'0')}</span><b>{d.decision}</b><span>{d.priority}</span><small>{d.source} · {pct(d.confidence)}</small><button onClick={() => setSelected({event:{type:'historical decision',...d},decision:d})}>Inspect</button></div>) : <p className="muted">No decisions yet. Start a meeting and simulate a package delivery.</p>}</section>
 
-      {result && result.decision?.jev && (
-        <section className="card signals">
-          <div className="sectionTop"><div><p className="eyebrow">DECISION SIGNALS</p><h2>Model output distributions</h2></div><span className="muted">Typed outputs · no prose parsing</span></div>
-          <div className="signalGrid">
-            <Signal title="Action" data={decisionDistribution} selected={result.decision.decision} />
-            <Signal title="Urgency" data={priorityDistribution} selected={result.decision.priority} priority />
-            <div className="signalBox">
-              <span className="signalLabel">Should interrupt?</span>
-              <strong>{pct(result.decision.jev.interruptProbability)}</strong>
-              <small>noul probability</small>
-              <div className="meter"><span style={{ width: pct(result.decision.jev.interruptProbability) }} /></div>
-            </div>
-          </div>
-        </section>
-      )}
+    {selected && <div className="overlay" onClick={() => setSelected(null)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modalTop"><h3>Decision details</h3><button onClick={()=>setSelected(null)}>×</button></div><p className="muted">This is a simulated device event captured by Ambient's orchestration pipeline.</p><dl><dt>Event</dt><dd>{pretty(selected.event?.type)}</dd><dt>Source</dt><dd>{selected.event?.source || 'ring'}</dd><dt>Decision</dt><dd>{selected.decision?.decision}</dd><dt>Priority</dt><dd>{selected.decision?.priority}</dd><dt>Confidence</dt><dd>{pct(selected.decision?.confidence)}</dd><dt>Policy</dt><dd>{selected.decision?.policyReason || 'none'}</dd></dl><div className="buttons end"><button onClick={()=>setSelected(null)}>Close</button>{selected.event?._id && <button onClick={()=>{dismiss(selected);setSelected(null)}}>Dismiss</button>}</div></div></div>}
 
-      <section className="card history">
-        <div className="sectionTop"><div><p className="eyebrow">MEMORY</p><h2>Decision history</h2></div><span className="muted">Latest decisions</span></div>
-        {history.length === 0 ? <div className="empty">No decisions yet. Start a meeting and simulate a package delivery to begin.</div> : history.map((item, index) => (
-          <div className="historyRow" key={`${item._id || item.eventId || index}-${index}`}>
-            <span className="historyIndex">{String(index + 1).padStart(2, '0')}</span>
-            <b>{pretty(item.decision)}</b>
-            <strong>{pretty(item.priority)}</strong>
-            <small>{item.source} · {pct(item.confidence)}</small>
-            <button className="historyDismiss" onClick={() => setSelectedDetail({ event: { type: item.decision, ...item }, decision: item })}>Inspect</button>
-          </div>
-        ))}
-      </section>
-
-      {selectedDetail && (
-        <div className="modalOverlay" onClick={() => setSelectedDetail(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modalHeader">
-              <h3>Event Details: {pretty(selectedDetail.event?.type || 'Event')}</h3>
-              <button className="modalClose" onClick={() => setSelectedDetail(null)}>✕</button>
-            </div>
-            <div className="modalContent">
-              <p>Simulated device event captured by Ambient orchestration pipeline.</p>
-              <div className="modalMeta">
-                <div className="modalMetaRow"><span>Source:</span><strong>{selectedDetail.event?.source || 'ring'}</strong></div>
-                <div className="modalMetaRow"><span>Location:</span><strong>{selectedDetail.event?.metadata?.location || 'front_door'}</strong></div>
-                <div className="modalMetaRow"><span>Device:</span><strong>{selectedDetail.event?.metadata?.device || 'ring_simulator'}</strong></div>
-                <div className="modalMetaRow"><span>Decision:</span><strong>{selectedDetail.decision?.decision || 'NOTIFY'}</strong></div>
-                <div className="modalMetaRow"><span>Urgency:</span><strong>{selectedDetail.decision?.priority || 'medium'}</strong></div>
-              </div>
-              <div className="actions" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
-                <button onClick={() => { dismiss(selectedDetail.event?._id || selectedDetail.event?.id); setSelectedDetail(null); }}>Dismiss Event</button>
-                <button className="primary" onClick={() => setSelectedDetail(null)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <footer>
-        <span>AMBIENT · Context → Decision → Policy → Action</span>
-        <span>Bounded AI judgment with deterministic policy control</span>
-      </footer>
-    </main>
-  );
+    <footer>AMBIENT · Context → Decision → Policy → Action <span>Bounded AI judgment with deterministic control</span></footer>
+  </main>;
 }
 
-function Signal({ title, data, selected, priority = false }) {
-  const entries = Object.entries(data || {});
-  if (!entries.length) return <div className="signalBox"><span className="signalLabel">{title}</span><strong>{pretty(selected)}</strong><small>Model result</small></div>;
-  return (
-    <div className="signalBox">
-      <span className="signalLabel">{title}</span>
-      {entries.map(([key, value]) => (
-        <div className="barRow" key={key}>
-          <span>{priority ? ['low', 'medium', 'high', 'critical'][Number(key)] || key : pretty(key)}</span>
-          <div className="meter"><span className={key === selected || (priority && key === ['low', 'medium', 'high', 'critical'].indexOf(selected).toString()) ? 'selected' : ''} style={{ width: pct(value) }} /></div>
-          <small>{pct(value)}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
+function Panel({title,heading,children}) { return <section className="panel"><p className="eyebrow">{title}</p><h2>{heading}</h2>{children}</section>; }
+function Distribution({title,data,selected,priority=false}) { const entries=Object.entries(data||{}); const labels=['low','medium','high','critical']; return <div className="signal"><label>{title}</label>{entries.length ? entries.map(([k,v])=><div className="bar" key={k}><span>{priority ? pretty(labels[Number(k)] ?? k) : pretty(k)}</span><div className="meter"><i className={(priority ? labels[Number(k)] === selected : k === selected) ? 'selected' : ''} style={{width:pct(v)}}/></div><small>{pct(v)}</small></div>) : <strong>{pretty(selected)}</strong>}</div>; }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<App/>);

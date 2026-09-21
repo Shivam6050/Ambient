@@ -1,6 +1,9 @@
 node_modules/
 .env
-.DS_Store
-dist/
-
+.env.*
+!.env.example
+client/dist/
 server/.local-mongo/
+*.log
+.DS_Store
+.vscode/*.local.json

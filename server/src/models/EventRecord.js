@@ -1,10 +1,21 @@
 import mongoose from 'mongoose';
+
+const timelineEntry = new mongoose.Schema({
+  at: { type: Date, required: true },
+  action: { type: String, required: true },
+  reason: { type: String, required: true },
+  source: String,
+  policyReason: String
+}, { _id: false });
+
 const schema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
+  id: { type: String, required: true, unique: true, index: true },
+  userId: { type: String, required: true, index: true },
   event: { type: mongoose.Schema.Types.Mixed, required: true },
   context: { type: mongoose.Schema.Types.Mixed, required: true },
   decision: { type: mongoose.Schema.Types.Mixed, required: true },
-  status: { type: String, enum: ['deferred', 'notified', 'dismissed'], required: true, index: true },
-  timeline: [{ _id: false, at: { type: Date, required: true }, action: { type: String, enum: ['RECEIVED', 'WAIT', 'NOTIFY', 'DISMISSED'], required: true }, reason: { type: String, required: true }, source: { type: String, enum: ['ai', 'rules', 'policy', 'fallback'] }, policyReason: String }]
+  status: { type: String, enum: ['deferred', 'notified', 'ignored', 'dismissed'], required: true },
+  timeline: { type: [timelineEntry], default: [] }
 }, { timestamps: true });
+
 export default mongoose.model('EventRecord', schema);

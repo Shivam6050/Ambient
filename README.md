@@ -2,167 +2,188 @@
 
 > **The assistant that knows when to act.**
 
-Ambient is a context-aware agentic orchestration system. It receives events, reads the user's current moment, requests bounded decisions from AI models (TypeSafe AI Jev, AWS Bedrock, or deterministic rules), validates proposals with deterministic policies, and routes resulting actions through device adapters.
+Ambient is a context-aware agentic orchestration prototype for the Amazon Developer Hackathon. It demonstrates a simple product thesis: an assistant should reason about the user's current moment before deciding whether to interrupt, wait, ask, or ignore.
 
----
+## v0.8.1 — repository consolidation
 
-## The Core Idea
+This version intentionally removes the earlier overlapping decision services. The runtime path is now:
 
 ```text
-Event → Context → AI Model → Policy → Confidence Gate → Action
-            ↑                                             ↓
-            └──────── Memory (WAIT Queue) ←───────────────┘
-                               ↓
-                        Context Changes
-                               ↓
-                          Re-Evaluation
+Ring simulator / event
+        ↓
+Context + preferences
+        ↓
+Jev (primary bounded decision engine)
+        ↓
+Deterministic policy
+        ↓
+Confidence gate
+        ↓
+Action router
+   ↙          ↘
+Alexa+       Waiting memory
+simulation       ↓
+             context change
+                  ↓
+              re-evaluate
 ```
 
-The key product behavior is **deferred intelligence**: when the user is busy, Ambient remembers non-critical events rather than interrupting. When context changes back to available, waiting events are automatically reconsidered.
+Amazon Bedrock is **not** the primary decision engine. It is an optional AWS Builder / explanation layer that receives an already-decided result and cannot modify it.
 
----
+## What is real vs simulated?
 
-## Product Surfaces
+| Component | Status |
+|---|---|
+| Ambient Express backend | Real local code |
+| React dashboard | Real local code |
+| MongoDB persistence | Optional real integration |
+| In-memory fallback | Real local implementation |
+| Jev API | Real integration when configured |
+| Amazon Bedrock | Real SDK integration when enabled |
+| Alexa+ experience | Simulated web experience |
+| Ring events/device | Simulated |
+| Physical Ring device | Not required |
+| MCP server | Not implemented in this version |
 
-The dashboard provides a complete, transparent view of the agentic loop:
+## Zero-setup local run
 
-1. **Moment** — Live user context (Available vs. In a meeting).
-2. **Event Simulator** — Trigger simulated Ring device events (routine package delivery vs. critical security alert).
-3. **Simulated Alexa+ Card** — User-facing notification experience with action details and dismissal controls.
-4. **Waiting Memory** — Deferred events queued until an opportune moment.
-5. **Decision Brain** — AI decision, confidence rating, gate mode, and suggested action.
-6. **Decision Trace** — Transparent pipeline audit (`Event → Context → Model → Policy → Action`).
-7. **Decision Signals** — Probability distributions for action, urgency score, and immediate interruption probability.
-8. **Decision History** — Timeline of recent decisions with inspection and idempotent dismissal.
-
----
-
-## Quick Start
-
-### Prerequisites
-- Node.js 20+ (Node.js 22+ recommended)
-
-### One-Command Startup
-Install dependencies and run both backend and frontend concurrently:
+Requirements: Node.js 20+.
 
 ```powershell
-# From the ambient/ root directory:
-npm.cmd run setup
+npm.cmd install
+Copy-Item server/.env.example server/.env
 npm.cmd run dev
 ```
 
-Open **http://localhost:5173**. The API will be available at **http://localhost:5000/api/health**.
+Open **http://localhost:5173**.
 
-> [!NOTE]
-> Ambient runs out of the box in offline `mock` AI provider mode with in-memory persistence. No external API keys or database servers are required for local evaluation.
-
----
-
-## AI Providers
-
-Ambient supports multiple pluggable decision providers configured via `server/.env`:
+The default configuration is:
 
 ```env
-# Choose: mock, jev, bedrock, or rules
+AI_PROVIDER=mock
+MONGODB_URI=
+AWS_BEDROCK_ENABLED=false
+```
+
+So the dashboard works without MongoDB, Jev, AWS credentials, or paid model calls.
+
+## Demo path
+
+1. Click **Start meeting**.
+2. Click **Package delivered**.
+3. Ambient chooses `WAIT` and stores the event.
+4. Click **End meeting**.
+5. Ambient re-evaluates the waiting event and surfaces a simulated Alexa+ notification.
+6. While busy, click **Security alert** to demonstrate deterministic critical-event override.
+7. Inspect the decision trace and typed Jev-style signals.
+8. Optionally enable Bedrock and click **Generate AWS insight**.
+
+## AI providers
+
+### Mock — recommended for local development
+
+```env
 AI_PROVIDER=mock
 ```
 
-### 1. Mock Provider (`AI_PROVIDER=mock`)
-Default mode. Simulates typed Jev distributions, urgency scores, and interruption probabilities locally without network calls.
+No network calls. The mock returns typed decision/priority/interruption distributions so the UI can demonstrate the full decision pipeline.
 
-### 2. TypeSafe AI Jev (`AI_PROVIDER=jev`)
-Calls Jev SystemOne API for bounded typed choices, scores, and noul interrupt probabilities:
+### Jev
+
 ```env
 AI_PROVIDER=jev
-TYPESAFE_API_KEY=your_typesafe_api_key
+TYPESAFE_API_KEY=your_key
 JEV_MODEL=jev-latest
 JEV_BASE_URL=https://api.typesafe.ai/v1/systemone
 ```
 
-### 3. AWS Bedrock (`AI_PROVIDER=bedrock`)
-Calls AWS Bedrock via the official JavaScript SDK v3 ConverseCommand API:
+Jev is the primary bounded decision provider. The server asks for a Choice, Score, and Noul output in one request. Fractional urgency score and probability distributions are preserved.
+
+### Rules
+
 ```env
-AI_PROVIDER=bedrock
-AWS_REGION=us-east-1
-BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0
+AI_PROVIDER=rules
 ```
-Configure standard AWS credentials in your environment. See [AI decision layer](docs/ai-decisions.md) for details.
 
-### 4. Deterministic Rules (`AI_PROVIDER=rules`)
-Pure deterministic rule engine based on context availability and event priority.
+Pure deterministic fallback for offline testing.
 
----
+### Amazon Bedrock explanation layer
 
-## Persistence Modes
+Keep the primary provider as `mock` or `jev` and enable only the explanation layer:
 
-1. **In-Memory Fallback (Default)**: If `MONGODB_URI` is blank, demo state is kept safely in memory with user-scoped isolation.
-2. **Local MongoDB Runner**: Run `npm.cmd run db` (or VS Code Task `Ambient: Start database`). This launches a local MongoDB 8.x WiredTiger instance on port 27017 saving data to `server/.local-mongo/`.
-3. **External MongoDB / Atlas**: Set `MONGODB_URI=mongodb://...` in `server/.env`.
+```env
+AWS_BEDROCK_ENABLED=true
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+```
 
-See [Persistence documentation](docs/persistence.md) for details.
+The AWS SDK uses the normal AWS credential chain. Do not commit credentials.
 
----
+## Confidence gate
 
-## Demo Script
+Thresholds are configurable:
 
-### The Hero Path (Deferred Delivery)
-1. Click **Start meeting** (Moment switches to BUSY).
-2. Click **Package delivered** (Ring Simulator).
-3. The event is evaluated: because the user is in a meeting, Ambient chooses `WAIT`.
-4. The event appears in **Waiting for the right moment**.
-5. Click **End meeting** (Moment switches to AVAILABLE).
-6. Ambient automatically detects the transition, re-evaluates the waiting event, and transitions to `NOTIFY`.
-7. The **Simulated Alexa+ Card** illuminates with the notification!
-8. Click **Show details** to inspect event metadata, then click **Dismiss**.
+```env
+AMBIENT_AUTO_THRESHOLD=0.80
+AMBIENT_REVIEW_THRESHOLD=0.55
+```
 
-### The Contrast Path (Urgent Security Override)
-1. While in a meeting, click **Security alert**.
-2. Deterministic policy immediately overrides the meeting protection, marking the event as critical `NOTIFY`.
-3. The notification surfaces immediately without delay.
+- `>= auto`: AUTO
+- `review..auto`: REVIEW → ASK
+- `< review`: DEFER → WAIT
+- Critical policy path: AUTO NOTIFY
 
----
+These are application thresholds, not model guarantees. They should be empirically calibrated before making production claims.
 
-## Verification & Tests
+## Persistence
 
-Run all unit and policy integration tests:
+Without `MONGODB_URI`, Ambient uses user-scoped in-memory state. This is the fastest local demo mode.
+
+With MongoDB:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/ambient
+```
+
+The app will attempt MongoDB and fall back to memory if the database is unavailable.
+
+## Tests
 
 ```powershell
 npm.cmd test
-```
-
-Or run individual suites:
-
-```powershell
-# Policy & boundary scenarios (9 tests)
-node --test server/test/agent-decision.test.js
-
-# Build client bundle
 npm.cmd run build
 ```
 
----
+The tests are deterministic and do not claim that live Jev or Bedrock inference has been verified. Live provider testing requires the corresponding credentials and should be recorded in the hackathon friction log.
 
-## API Reference
+## API
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/health` | `GET` | Health check, active storage mode, and AI provider |
-| `/api/agent/status` | `GET` | AI provider configuration and readiness |
-| `/api/agent/evaluate` | `POST` | Evaluate event payload through the agentic pipeline |
-| `/api/context` | `GET` | Get current user context and preferences |
-| `/api/context` | `PATCH` | Update context availability (triggers re-evaluation) |
-| `/api/events` | `POST` | Submit event and return lifecycle record |
-| `/api/events` | `GET` | List persisted event records |
-| `/api/events/history` | `GET` | Retrieve recent events, decisions, and waiting queue |
-| `/api/events/:id/dismiss` | `POST` | Idempotently dismiss an active notification |
-| `/api/actions/capabilities` | `GET` | List registered action adapter capabilities |
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/health` | Health and storage/provider status |
+| GET | `/api/agent/status` | Provider configuration status |
+| POST | `/api/agent/evaluate` | Evaluate an event through the pipeline |
+| POST | `/api/agent/insight` | Optional Bedrock explanation |
+| GET | `/api/context` | Read current context/preferences |
+| PATCH | `/api/context` | Change availability and trigger re-evaluation |
+| GET | `/api/events/history` | Recent events, decisions, waiting queue |
+| GET | `/api/events` | Event records |
+| POST | `/api/events` | Submit an event |
+| POST | `/api/events/:id/dismiss` | Dismiss a notification |
+| GET | `/api/actions/capabilities` | Registered action adapters |
 
----
+## Hackathon transparency
 
-## Documentation Index
+This repository intentionally documents the simulation boundary. The Alexa+ and Ring experiences are simulated for the allowed hackathon web/demo path. The product should not claim a physical Ring integration or a live Alexa+ skill when neither is present.
 
-- [Architecture Guide](docs/architecture.md)
-- [Persistence Implementation](docs/persistence.md)
-- [AI Decision Layer & AWS Bedrock](docs/ai-decisions.md)
-- [Friction Log](docs/friction-log.md)
-- [Product Feedback](docs/product-feedback.md)
+### Product feedback
+
+See `docs/product-feedback.md`. Record actual feedback only after using the relevant Amazon/AWS tool.
+
+### Friction log
+
+See `docs/friction-log.md`. Record actual setup failures, latency, documentation gaps, or SDK issues; do not fabricate entries.
+
+## License
+
+MIT — see `LICENSE`.

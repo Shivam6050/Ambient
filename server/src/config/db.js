@@ -1,23 +1,22 @@
 import mongoose from 'mongoose';
 import { env } from './env.js';
 
+let warned = false;
+
 export async function connectDB() {
-  if (!env.mongoUri) {
-    console.log('MongoDB URI not configured. Running with in-memory fallback.');
-    return false;
-  }
+  if (!env.mongoUri) return false;
+  if (mongoose.connection.readyState === 1) return true;
   try {
-    await mongoose.connect(env.mongoUri, {
-      serverSelectionTimeoutMS: 5000
-    });
-    console.log(`MongoDB connected: ${env.mongoUri}`);
+    await mongoose.connect(env.mongoUri, { serverSelectionTimeoutMS: 3000 });
+    console.log('Ambient: MongoDB connected.');
     return true;
-  } catch (err) {
-    console.warn(`MongoDB connection failed (${err.message}). Running with in-memory fallback.`);
+  } catch (error) {
+    if (!warned) {
+      console.warn(`Ambient: MongoDB unavailable (${error.message}). Using in-memory storage.`);
+      warned = true;
+    }
     return false;
   }
 }
 
-export function isDBConnected() {
-  return mongoose.connection.readyState === 1;
-}
+export const isDBConnected = () => mongoose.connection.readyState === 1;

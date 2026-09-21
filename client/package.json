@@ -1,1 +1,9 @@
-{"name":"ambient-client","private":true,"version":"0.1.0","type":"module","scripts":{"dev":"vite","build":"vite build"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest"},"devDependencies":{}}
+{
+  "name": "ambient-client",
+  "version": "0.8.1",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "dependencies": { "@vitejs/plugin-react": "^4.7.0", "react": "^19.1.1", "react-dom": "^19.1.1", "vite": "^6.3.5" },
+  "devDependencies": {}
+}

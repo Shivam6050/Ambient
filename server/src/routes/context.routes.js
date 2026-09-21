@@ -1,8 +1,6 @@
 import { Router } from 'express';
-import { getContext, patchContext } from '../controllers/context.controller.js';
-
+import { getContextController, patchContext } from '../controllers/context.controller.js';
 const router = Router();
-router.get('/', getContext);
+router.get('/', getContextController);
 router.patch('/', patchContext);
-
 export default router;

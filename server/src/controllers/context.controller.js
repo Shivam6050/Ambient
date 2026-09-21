@@ -1,18 +1,18 @@
-import { getContext as getStoredContext, updateContextAndReEvaluate } from '../services/context/context.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { getContext, updateContext } from '../services/context/context.service.js';
+import { reEvaluateWaitingEvents } from '../services/events/reEvaluation.service.js';
 
-export const getContext = asyncHandler(async (req, res) => {
+export const getContextController = asyncHandler(async (req, res) => {
   const userId = req.query.userId || 'demo-user';
-  const data = await getStoredContext(userId);
-  return ApiResponse(res, 200, data.context || data, 'Context loaded');
+  return ApiResponse(res, 200, await getContext(userId), 'Context loaded');
 });
 
 export const patchContext = asyncHandler(async (req, res) => {
-  if (req.body?.availability && !['busy', 'available'].includes(req.body.availability)) {
-    return res.status(400).json({ success: false, message: 'Availability must be busy or available.' });
-  }
   const userId = req.body?.userId || req.query?.userId || 'demo-user';
-  const result = await updateContextAndReEvaluate(req.body, userId);
-  return ApiResponse(res, 200, result, 'Context updated');
+  const previous = await getContext(userId);
+  const next = await updateContext(req.body || {}, userId);
+  const changedToAvailable = previous.context.availability !== 'available' && next.availability === 'available';
+  const reevaluation = changedToAvailable ? await reEvaluateWaitingEvents(userId) : { context: next, reEvaluated: 0, results: [] };
+  return ApiResponse(res, 200, { context: next, reEvaluated: reevaluation.reEvaluated, results: reevaluation.results }, 'Context updated');
 });

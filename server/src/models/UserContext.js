@@ -1,11 +1,10 @@
 import mongoose from 'mongoose';
 
-const contextSchema = new mongoose.Schema({
-  userId: { type: String, default: 'demo-user', unique: true, index: true },
+const schema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true, index: true },
   availability: { type: String, enum: ['available', 'busy'], default: 'available' },
   activity: { type: String, default: 'idle' },
-  location: { type: String, default: 'home' },
-  updatedAt: { type: Date, default: Date.now }
+  location: { type: String, default: 'home' }
 }, { timestamps: true });
 
-export default mongoose.model('UserContext', contextSchema);
+export default mongoose.model('UserContext', schema);

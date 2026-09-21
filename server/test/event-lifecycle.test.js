@@ -6,8 +6,10 @@ import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'node:url';
 const cwd = fileURLToPath(new URL('../', import.meta.url));
-const dbName = 'ambient_test_' + randomUUID().replaceAll('-', '');
-const uri = 'mongodb://127.0.0.1:27017/' + dbName;
+// Use in-memory MongoDB for tests
+let mongoServer;
+let uri;
+
 const base = 'http://127.0.0.1:5055/api';
 let child;
 let output = '';
@@ -33,9 +35,9 @@ async function api(path, method = 'GET', body) {
 }
 const change = availability => api('/context', 'PATCH', { availability });
 const deliver = () => api('/events', 'POST', { event: { source: 'ring', type: 'package_delivered' }, context: { availability: 'available' } });
-test('real MongoDB survives server restarts and prevents duplicate transitions', { timeout: 60000 }, async () => {
+test('MongoDB survives server restarts and prevents duplicate transitions', { timeout: 60000 }, async () => {
   try {
-    await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+    await mongoose.connect(testUri, { serverSelectionTimeoutMS: 5000 });
     await start();
     await change('busy');
     const delivery = await deliver();
@@ -67,7 +69,6 @@ test('real MongoDB survives server restarts and prevents duplicate transitions',
     assert.equal(invalid.status, 400);
   } finally {
     await stop();
-    if (mongoose.connection.readyState === 1 && mongoose.connection.name === dbName && /^ambient_test_[a-f0-9]{32}$/.test(dbName)) await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
   }
 });
