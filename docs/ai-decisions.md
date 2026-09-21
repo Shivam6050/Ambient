@@ -14,7 +14,7 @@ Jev's output is normalized into an application decision but deterministic policy
 
 ## AWS Builder / Bedrock
 
-Amazon Bedrock is intentionally separate from the decision provider in v0.8.1. The dashboard sends the already-approved event, context, decision, confidence, and gate to Bedrock and asks for a concise explanation. The response is informational and cannot change the action.
+Amazon Bedrock is intentionally separate from the decision provider in v0.9.0. The dashboard sends the already-approved event, context, decision, confidence, and gate to Bedrock and asks for a concise explanation. The response is informational and cannot change the action. v0.9 also exposes the same orchestration core through an MCP Streamable HTTP server; MCP is an integration boundary, not a second decision engine.
 
 Keep `AWS_BEDROCK_ENABLED=false` for local work to avoid unnecessary inference calls.
 
