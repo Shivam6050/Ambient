@@ -1,6 +1,6 @@
 {
   "name": "ambient",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "setup": "npm install",
-    "dev": "concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\"",
+    "dev": "concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\",
     "server": "npm run dev --prefix server",
     "client": "npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort",
     "build": "npm run build --workspace=client",
