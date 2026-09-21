@@ -6,7 +6,7 @@
   "workspaces": ["server", "client"],
   "scripts": {
     "setup": "npm install",
-    "dev": "concurrently --kill-others -n server,client "npm run dev --prefix server" "npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort",
+    "dev": "concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\",
     "server": "npm run dev --prefix server",
     "client": "npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort",
     "mcp": "npm run mcp --prefix server",
