@@ -1,7 +1,9 @@
 import { deliverAlexaAction } from './alexaAdapter.js';
+import { getRingAdapterStatus } from './ringAdapter.js';
 
 const adapters = {
-  alexa: { name: 'Alexa+ integration boundary', capabilities: ['notify', 'show_details'] },
+  alexa: { name: 'Alexa+ MCP integration boundary', capabilities: ['notify', 'show_details'] },
+  ring: { name: 'Ring Partner API boundary', capabilities: ['webhook', 'device_events'] },
   ambient: { name: 'Ambient memory', capabilities: ['store', 'defer'] }
 };
 
@@ -14,5 +16,8 @@ export async function routeAction({ decision, event }) {
 }
 
 export function getActionCapabilities() {
-  return Object.entries(adapters).map(([id, adapter]) => ({ id, ...adapter }));
+  return [
+    ...Object.entries(adapters).map(([id, adapter]) => ({ id, ...adapter })),
+    { ...getRingAdapterStatus(), id: 'ring-runtime' }
+  ];
 }
