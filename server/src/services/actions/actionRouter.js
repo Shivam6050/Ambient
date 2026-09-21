@@ -1,5 +1,7 @@
+import { deliverAlexaAction } from './alexaAdapter.js';
+
 const adapters = {
-  alexa: { name: 'Alexa+ simulation', capabilities: ['notify', 'show_details'] },
+  alexa: { name: 'Alexa+ integration boundary', capabilities: ['notify', 'show_details'] },
   ambient: { name: 'Ambient memory', capabilities: ['store', 'defer'] }
 };
 
@@ -8,7 +10,7 @@ export async function routeAction({ decision, event }) {
   if (decision.decision === 'IGNORE') return { channel: 'ambient', mode: 'memory', status: 'ignored' };
   if (decision.decision === 'ASK') return { channel: 'alexa', mode: 'simulated-alexa-plus', status: 'pending_user_input', message: 'Ambient needs your confirmation before acting.' };
   if (decision.decision === 'ESCALATE') return { channel: 'ambient', mode: 'policy-escalation-simulation', status: 'pending_user_input' };
-  return { channel: 'alexa', mode: 'simulated-alexa-plus', status: 'ready', message: `Your ${String(event.type).replaceAll('_', ' ')} needs your attention.`, presentation: 'notification_card' };
+  return deliverAlexaAction({ decision, event });
 }
 
 export function getActionCapabilities() {
