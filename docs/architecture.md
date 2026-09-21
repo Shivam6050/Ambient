@@ -28,7 +28,8 @@ Re-evaluation
 - **Policy:** owns hard application rules and safety constraints.
 - **Confidence gate:** decides whether a proposal may execute automatically.
 - **Action router:** executes only application-approved simulated actions.
-- **Memory:** stores waiting events and decision history.
+- **Memory:** the single active in-memory adapter for local fallback state.
+- **MongoDB:** optional persistent adapter for context, preferences, events, decisions, and lifecycle records.
 - **Bedrock:** optional explanation layer; never makes or changes the decision.
 
 ## Important policy examples
