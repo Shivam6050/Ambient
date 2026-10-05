@@ -1,3 +1,4 @@
+import { serialize } from '../serialize.js';
 import Event from '../../models/Event.js';
 import Decision from '../../models/Decision.js';
 import EventRecord from '../../models/EventRecord.js';
@@ -35,11 +36,21 @@ async function loadOrCreateEvent(payload, userId, existingEventId) {
   return event;
 }
 
-export async function evaluateEvent(payload, suppliedContext = null, userId = 'demo-user', options = {}) {
+export function evaluateEvent(...args) { return serialize(() => evaluateEventInternal(...args)); }
+
+async function evaluateEventInternal(payload, suppliedContext = null, userId = 'demo-user', options = {}) {
   const { context: storedContext, preferences } = await getContext(userId);
   const context = suppliedContext ? { ...storedContext, ...suppliedContext } : storedContext;
   const eventDoc = await loadOrCreateEvent(payload, userId, options.existingEventId);
   const event = typeof eventDoc.toObject === 'function' ? eventDoc.toObject() : eventDoc;
+
+  const previous = options.existingEventId
+    ? (isDBConnected() ? await EventRecord.findOne({ id: String(event._id), userId }).lean() : getRecord(userId, String(event._id)))
+    : null;
+  // A stale waiting-list snapshot must never redeliver a handled or dismissed event.
+  if (options.existingEventId && event.status !== 'waiting') {
+    return { event, context, preferences, decision: previous?.decision, action: { status: 'unchanged', channel: 'ambient' } };
+  }
 
   let proposal;
   try {
@@ -91,7 +102,7 @@ export async function evaluateEvent(payload, suppliedContext = null, userId = 'd
   const action = await routeAction({ decision, event, context, userId });
   const recordId = String(event._id);
   const timeline = [
-    { at: new Date(), action: 'RECEIVED', reason: 'Simulated device event received.' },
+    ...(previous?.timeline || [{ at: new Date(), action: 'RECEIVED', reason: 'Device event received.' }]),
     {
       at: new Date(),
       action: decision.decision,
@@ -104,7 +115,8 @@ export async function evaluateEvent(payload, suppliedContext = null, userId = 'd
   const record = {
     id: recordId,
     userId,
-    event,
+    event: { ...event, status },
+    action,
     context,
     decision: savedDecision.toObject?.() || savedDecision,
     status: status === 'waiting' ? 'deferred' : status === 'ignored' ? 'ignored' : 'notified',

@@ -27,13 +27,14 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [ctx, hist] = await Promise.all([
+      const [ctx, hist, records] = await Promise.all([
         request(`/context?userId=${USER}`),
-        request(`/events/history?userId=${USER}`)
+        request(`/events/history?userId=${USER}`), request(`/events?userId=${USER}`)
       ]);
       setContext(ctx.data?.context || ctx.data);
       setHistory(hist.data?.decisions || []);
       setWaiting(hist.data?.waiting || []);
+      setNotification((records.data || []).find(item => item.status === 'notified' && (item.action?.status === 'ready' || (!item.action && item.decision?.decision === 'NOTIFY'))) || null);
     } catch (e) { setNotice(`Backend unavailable: ${e.message}`); }
   }, []);
 

@@ -12,6 +12,7 @@ const schema = new mongoose.Schema({
   id: { type: String, required: true, unique: true, index: true },
   userId: { type: String, required: true, index: true },
   event: { type: mongoose.Schema.Types.Mixed, required: true },
+  action: mongoose.Schema.Types.Mixed,
   context: { type: mongoose.Schema.Types.Mixed, required: true },
   decision: { type: mongoose.Schema.Types.Mixed, required: true },
   status: { type: String, enum: ['deferred', 'notified', 'ignored', 'dismissed'], required: true },

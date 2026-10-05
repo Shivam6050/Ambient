@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+process.env.AI_PROVIDER = 'mock';
+process.env.MONGODB_URI = '';
+const { evaluateEvent } = await import('../src/services/agent/agent.service.js');
+const { updateContext } = await import('../src/services/context/context.service.js');
+const { reEvaluateWaitingEvents } = await import('../src/services/events/reEvaluation.service.js');
+const { dismissEvent, listEvents } = await import('../src/services/events/event.service.js');
+const payload = { source: 'ring', type: 'package_delivered', priority: 'medium' };
+test('retains WAIT history, releases once, and saves idempotent dismissal', async () => {
+  const user = randomUUID();
+  await updateContext({ availability: 'busy' }, user);
+  const initial = await evaluateEvent(payload, null, user);
+  await updateContext({ availability: 'available' }, user);
+  await Promise.all([reEvaluateWaitingEvents(user), reEvaluateWaitingEvents(user)]);
+  let [record] = await listEvents(user);
+  assert.deepEqual(record.timeline.map(step => step.action), ['RECEIVED', 'WAIT', 'NOTIFY']);
+  assert.equal(record.action.status, 'ready');
+  assert.equal(record.event.status, 'handled');
+  await Promise.all([dismissEvent(record.id, user), dismissEvent(record.id, user)]);
+  [record] = await listEvents(user);
+  assert.equal(record.status, 'dismissed');
+  assert.equal(record.timeline.filter(step => step.action === 'DISMISSED').length, 1);
+  const stale = await evaluateEvent(payload, null, user, { existingEventId: initial.event._id });
+  assert.equal(stale.action.status, 'unchanged');
+  assert.equal((await listEvents(user))[0].status, 'dismissed');
+  assert.equal(await dismissEvent(record.id, 'someone-else'), null);
+});
+test('dismissed waiting event is not released when meeting ends', async () => {
+  const user = randomUUID();
+  await updateContext({ availability: 'busy' }, user);
+  const initial = await evaluateEvent(payload, null, user);
+  await dismissEvent(initial.event._id, user);
+  await updateContext({ availability: 'available' }, user);
+  assert.equal((await reEvaluateWaitingEvents(user)).reEvaluated, 0);
+  assert.equal((await listEvents(user))[0].status, 'dismissed');
+});
