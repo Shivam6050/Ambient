@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
@@ -24,6 +24,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('Ready for a context-aware event.');
   const [selected, setSelected] = useState(null);
+  const [connected, setConnected] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -31,11 +32,12 @@ function App() {
         request(`/context?userId=${USER}`),
         request(`/events/history?userId=${USER}`), request(`/events?userId=${USER}`)
       ]);
+      setConnected(true);
       setContext(ctx.data?.context || ctx.data);
       setHistory(hist.data?.decisions || []);
       setWaiting(hist.data?.waiting || []);
       setNotification((records.data || []).find(item => item.status === 'notified' && (item.action?.status === 'ready' || (!item.action && item.decision?.decision === 'NOTIFY'))) || null);
-    } catch (e) { setNotice(`Backend unavailable: ${e.message}`); }
+    } catch (e) { setConnected(false); setNotice(`Connection lost. Your saved data is unchanged. Retrying automatically.`); }
   }, []);
 
   useEffect(() => { load(); const timer = setInterval(load, 3000); return () => clearInterval(timer); }, [load]);
@@ -71,7 +73,7 @@ function App() {
     const id = item?.event?._id || item?.event?.id;
     if (!id) return;
     setLoading(true);
-    try { await request(`/events/${id}/dismiss?userId=${USER}`, { method: 'POST' }); setNotification(null); setNotice('Event dismissed.'); await load(); }
+    try { await request(`/events/${id}/dismiss?userId=${USER}`, { method: 'POST' }); setNotification(null); setNotice('Event dismissed.'); await load(); return true; }
     catch (e) { setNotice(e.message); } finally { setLoading(false); }
   };
 
@@ -87,40 +89,42 @@ function App() {
   const busy = context?.availability === 'busy';
   const decisionDist = result?.decision?.jev?.probabilities?.decision || {};
   const priorityDist = result?.decision?.jev?.probabilities?.priority || {};
-  const priorityLabels = ['low', 'medium', 'high', 'critical'];
 
-  return <main>
-    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>Alexa+ · MCP-ready</span><b className={busy ? 'busy' : ''}>{busy ? 'BUSY' : 'AVAILABLE'}</b></div></header>
 
-    <section className="hero"><p className="eyebrow">THE ASSISTANT THAT KNOWS WHEN TO ACT</p><h1>Understand the <span>moment.</span><br/>Then decide when to act.</h1><p>Ambient combines context, bounded AI judgment, deterministic policy, confidence gating, memory, and simulated device actions into one transparent orchestration loop.</p><div className="loop">EVENT <i>→</i> CONTEXT <i>→</i> JEV <i>→</i> POLICY <i>→</i> GATE <i>→</i> ACTION</div></section>
+  return <><a className="skip" href="#overview">Skip to dashboard</a><aside className="sidebar"><div className="sideBrand"><span className="brandMark">a</span>ambient</div><p className="sideLabel">WORKSPACE</p><nav aria-label="Main navigation"><a href="#overview"><span>◫</span>Overview</a><a href="#activity"><span>≡</span>Activity</a></nav><div className="sideFoot"><strong>A little less interruption.</strong>A little more focus.<br/>Hackathon demo · simulated devices</div></aside><main>
+    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>{connected ? 'Connected to workspace' : 'Connecting…'}</span><b className={busy ? 'busy' : ''}>{!connected ? 'OFFLINE' : busy ? 'FOCUS MODE' : 'AVAILABLE'}</b></div></header>
 
-    <div className="notice">● {notice}</div>
+    <section className="hero" id="overview"><p className="eyebrow">YOUR DAY, WITH FEWER INTERRUPTIONS</p><h1>Make room for <span>the moment.</span></h1><p>Stay present. Ambient holds routine updates while you focus, and brings them back when you're ready.</p><div className="loop"><span>01 · Notice</span><i>→</i><span>02 · Understand</span><i>→</i><span>03 · Act at the right time</span></div></section>
+    <div className={`notice ${!connected ? 'error' : ''}`} role="status" aria-live="polite"><span aria-hidden="true">{connected ? '●' : '○'}</span>{!connected ? 'Connecting to your workspace. Retrying automatically…' : notice.startsWith('Connection lost') ? 'Connection restored. Your workspace is up to date.' : notice}</div>
+    <section className="two"><Panel title="YOUR CONTEXT" heading="Protect your focus"><div className="moment"><div className={`momentIcon ${busy ? 'busy' : ''}`}>{busy ? '◉' : '○'}</div><div><strong>{!context ? 'Loading your context…' : busy ? 'In a meeting' : 'Open to updates'}</strong><small>{context?.location || 'home'} · {context?.activity || 'idle'}</small></div></div><div className="buttons"><button disabled={loading || !connected || busy} onClick={() => applyContext('busy')}>Start meeting</button><button disabled={loading || !connected || !busy} onClick={() => applyContext('available')}>End meeting</button></div></Panel>
+      <Panel title="EVENT SIMULATOR" heading="Try a real-life moment"><div className="events"><button onClick={() => simulate('package_delivered')} disabled={loading || !connected}><span aria-hidden="true">◇</span><div><b>Package delivered</b><small>Routine · front door · Ring simulator</small></div></button><button onClick={() => simulate('security_alert')} disabled={loading || !connected}><span aria-hidden="true">!</span><div><b>Security alert</b><small>Critical · front door · Ring simulator</small></div></button></div><small className="muted">The Ring device is simulated for the hackathon demo.</small></Panel></section>
 
-    <section className="two"><Panel title="01 · MOMENT" heading="What are you doing?"><div className="moment"><div className={`momentIcon ${busy ? 'busy' : ''}`}>{busy ? '◉' : '○'}</div><div><strong>{busy ? 'In a meeting' : 'Available'}</strong><small>{context?.location || 'home'} · {context?.activity || 'idle'}</small></div></div><div className="buttons"><button disabled={loading || busy} onClick={() => applyContext('busy')}>Start meeting</button><button disabled={loading || !busy} onClick={() => applyContext('available')}>End meeting</button></div></Panel>
-      <Panel title="02 · EVENT" heading="What just happened?"><div className="events"><button onClick={() => simulate('package_delivered')} disabled={loading}><span>📦</span><div><b>Package delivered</b><small>Routine · front door · Ring simulator</small></div></button><button onClick={() => simulate('security_alert')} disabled={loading}><span>🚨</span><div><b>Security alert</b><small>Critical · front door · Ring simulator</small></div></button></div><small className="muted">The Ring device is simulated for the hackathon demo.</small></Panel></section>
+    {notification && <section className="notification"><div className="notifTop"><div className="orb">A</div><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>A timely update</h2></div><b>SIMULATED ALEXA+</b></div><div className="message">{notification.action?.message || `Your ${pretty(notification.event?.type)} needs your attention.`}</div><div className="chips"><span>Decision · {notification.decision?.decision}</span><span>Confidence · {pct(notification.decision?.confidence)}</span><span>Source · {notification.decision?.source}</span></div><div className="buttons"><button onClick={() => setSelected(notification)}>Show details →</button><button disabled={loading || !connected} onClick={() => dismiss(notification)}>Dismiss</button></div></section>}
 
-    {notification && <section className="notification"><div className="notifTop"><div className="orb">A</div><div><p className="eyebrow">ALEXA+ · USER MOMENT</p><h2>Ambient has something for you</h2></div><b>READY</b></div><div className="message">{notification.action?.message || `Your ${pretty(notification.event?.type)} needs your attention.`}</div><div className="chips"><span>Decision · {notification.decision?.decision}</span><span>Confidence · {pct(notification.decision?.confidence)}</span><span>Source · {notification.decision?.source}</span></div><div className="buttons"><button onClick={() => setSelected(notification)}>Show details →</button><button onClick={() => dismiss(notification)}>Dismiss</button></div></section>}
-
-    {waiting[0] && <section className="waiting"><div><p className="eyebrow">MEMORY · DEFERRED</p><h2>Ambient is waiting for the right moment.</h2><p>{pretty(waiting[0].type)} was stored because interrupting a meeting is unnecessary.</p></div><strong>WAIT<small>re-evaluate on context change</small></strong></section>}
+    {waiting[0] && <section className="waiting"><div><p className="eyebrow">SAVED FOR LATER</p><h2>Your focus comes first.</h2><p>{pretty(waiting[0].type)} is waiting. Ambient will reconsider it when your context changes.</p></div><strong>WAIT<small>re-evaluate on context change</small></strong></section>}
 
     {result && <>
-      <section className="decisionGrid"><Panel title="03 · DECISION BRAIN" heading="Decision Engine"><div className="decision"><strong>{result.decision?.decision}</strong><span>{pretty(result.event?.type)}</span></div><p className="reason">{result.decision?.reason}</p><div className="chips"><span>Urgency · {result.decision?.priority}</span><span>Confidence · {pct(result.decision?.confidence)}</span><span>Gate · {result.decision?.gate?.mode || 'AUTO'}</span><span>Source · {result.decision?.source}</span></div><div className="suggested">Suggested action<b>{result.decision?.suggestedAction}</b></div></Panel>
-        <Panel title="DECISION TRACE" heading="Why this happened?"><div className="trace">{[['Event', pretty(result.event?.type)],['Context', `${pretty(result.context?.availability)} · ${pretty(result.context?.activity)}`],['Model', `${result.decision?.decision} · ${pct(result.decision?.confidence)}`],['Policy', result.decision?.policyReason || 'validated pass-through'],['Action', pretty(result.action?.status || 'none')]].map(([a,b],i)=><React.Fragment key={a}><div><b>{a}</b><span>{b}</span></div>{i<4&&<i>↓</i>}</React.Fragment>)}</div></Panel></section>
+      <section className="decisionGrid"><Panel title="LATEST DECISION" heading="A considered response"><div className="decision"><strong>{result.decision?.decision}</strong><span>{pretty(result.event?.type)}</span></div><p className="reason">{result.decision?.reason}</p><div className="chips"><span>Urgency · {result.decision?.priority}</span><span>Confidence · {pct(result.decision?.confidence)}</span><span>Gate · {result.decision?.gate?.mode || 'AUTO'}</span><span>Source · {result.decision?.source}</span></div><div className="suggested">Suggested action<b>{result.decision?.suggestedAction}</b></div></Panel>
+        <Panel title="DECISION TRACE" heading="How we got here"><div className="trace">{[['Event', pretty(result.event?.type)],['Context', `${pretty(result.context?.availability)} · ${pretty(result.context?.activity)}`],['Model', `${result.decision?.decision} · ${pct(result.decision?.confidence)}`],['Policy', result.decision?.policyReason || 'validated pass-through'],['Action', pretty(result.action?.status || 'none')]].map(([a,b],i)=><React.Fragment key={a}><div><b>{a}</b><span>{b}</span></div>{i<4&&<i>↓</i>}</React.Fragment>)}</div></Panel></section>
 
-      <section className="panel"><div className="panelTop"><div><p className="eyebrow">AWS BUILDER · AMAZON BEDROCK</p><h2>Explain the moment</h2></div><span className="badge">NOVA LITE</span></div><p className="muted">Bedrock is an explanation layer only. It cannot change Jev's decision or deterministic policy.</p>{!insight ? <button className="wide" onClick={generateInsight} disabled={loading}>Generate AWS insight</button> : <div className="insight"><b>{insight.enabled ? `${insight.region} · ${insight.model}` : 'Bedrock disabled'}</b><p>{insight.text}</p></div>}</section>
+      <section className="panel"><div className="panelTop"><div><p className="eyebrow">AWS BUILDER · AMAZON BEDROCK</p><h2>Explain the moment</h2></div><span className="badge">OPTIONAL</span></div><p className="muted">Bedrock is an explanation layer only. It cannot change Jev's decision or deterministic policy.</p>{!insight ? <button className="wide" onClick={generateInsight} disabled={loading || !connected}>Generate AWS insight</button> : <div className="insight"><b>{insight.enabled ? `${insight.region} · ${insight.model}` : 'Bedrock disabled'}</b><p>{insight.text}</p></div>}</section>
 
       {result.decision?.jev && <section className="panel"><div className="panelTop"><div><p className="eyebrow">DECISION SIGNALS</p><h2>Typed model outputs</h2></div><span className="muted">No prose parsing</span></div><div className="signals"><Distribution title="Action" data={decisionDist} selected={result.decision.decision}/><Distribution title="Urgency" data={priorityDist} selected={result.decision.priority} priority/><div className="signal"><label>Should interrupt?</label><strong>{pct(result.decision.jev.interruptProbability)}</strong><small>Noul probability</small><div className="meter"><i style={{width:pct(result.decision.jev.interruptProbability)}}/></div></div></div></section>}
     </>}
 
-    <section className="panel"><div className="panelTop"><div><p className="eyebrow">MEMORY</p><h2>Decision history</h2></div><span className="muted">Latest 20</span></div>{history.length ? history.map((d,i)=><div className="history" key={d._id || `${d.createdAt}-${i}`}><span>{String(i+1).padStart(2,'0')}</span><b>{d.decision}</b><span>{d.priority}</span><small>{d.source} · {pct(d.confidence)}</small><button onClick={() => setSelected({event:{type:'historical decision',...d},decision:d})}>Inspect</button></div>) : <p className="muted">No decisions yet. Start a meeting and simulate a package delivery.</p>}</section>
+    <section className="panel" id="activity"><div className="panelTop"><div><p className="eyebrow">YOUR ACTIVITY</p><h2>Decision history</h2></div><span className="muted">Latest 20</span></div>{history.length ? history.map((d,i)=><div className="history" key={d._id || `${d.createdAt}-${i}`}><span>{String(i+1).padStart(2,'0')}</span><b>{d.decision}</b><span>{d.priority}</span><small>{d.source} · {pct(d.confidence)}</small><button onClick={() => setSelected({decision:d})}>Inspect</button></div>) : <div className="emptyState"><strong>A quieter day starts here.</strong><p>Start a meeting, then simulate a package delivery.<br/>Each decision will appear here, with its reason.</p></div>}</section>
 
-    {selected && <div className="overlay" onClick={() => setSelected(null)}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modalTop"><h3>Decision details</h3><button onClick={()=>setSelected(null)}>×</button></div><p className="muted">This is a simulated device event captured by Ambient's orchestration pipeline.</p><dl><dt>Event</dt><dd>{pretty(selected.event?.type)}</dd><dt>Source</dt><dd>{selected.event?.source || 'ring'}</dd><dt>Decision</dt><dd>{selected.decision?.decision}</dd><dt>Priority</dt><dd>{selected.decision?.priority}</dd><dt>Confidence</dt><dd>{pct(selected.decision?.confidence)}</dd><dt>Policy</dt><dd>{selected.decision?.policyReason || 'none'}</dd></dl><div className="buttons end"><button onClick={()=>setSelected(null)}>Close</button>{selected.event?._id && <button onClick={()=>{dismiss(selected);setSelected(null)}}>Dismiss</button>}</div></div></div>}
-
-    <footer>AMBIENT · Context → Decision → Policy → Action <span>Bounded AI judgment with deterministic control</span></footer>
-  </main>;
+    {selected && <Details item={selected} onClose={() => setSelected(null)} onDismiss={dismiss} loading={loading}/>}
+    <footer>Ambient · Thoughtful by design<span>Device experiences are simulated. Decisions are real application outputs.</span></footer>
+  </main></>;
 }
 
 function Panel({title,heading,children}) { return <section className="panel"><p className="eyebrow">{title}</p><h2>{heading}</h2>{children}</section>; }
 function Distribution({title,data,selected,priority=false}) { const entries=Object.entries(data||{}); const labels=['low','medium','high','critical']; return <div className="signal"><label>{title}</label>{entries.length ? entries.map(([k,v])=><div className="bar" key={k}><span>{priority ? pretty(labels[Number(k)] ?? k) : pretty(k)}</span><div className="meter"><i className={(priority ? labels[Number(k)] === selected : k === selected) ? 'selected' : ''} style={{width:pct(v)}}/></div><small>{pct(v)}</small></div>) : <strong>{pretty(selected)}</strong>}</div>; }
 
+function Details({item, onClose, onDismiss, loading}) {
+  const ref = useRef(null);
+  useEffect(() => { const dialog = ref.current; dialog.showModal(); return () => dialog.close(); }, []);
+  return <dialog className="overlay" ref={ref} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }} aria-labelledby="detail-title"><div className="modal"><div className="modalTop"><h3 id="detail-title">Decision details</h3><button onClick={onClose} aria-label="Close details">×</button></div><p className="muted">{item.event ? 'A simulated device event, evaluated against your context.' : 'A saved decision from your activity history.'}</p><dl>{item.event && <><dt>Event</dt><dd>{pretty(item.event.type)}</dd><dt>Source</dt><dd>{pretty(item.event.source)}</dd></>}<dt>Decision</dt><dd>{item.decision?.decision}</dd><dt>Priority</dt><dd>{pretty(item.decision?.priority)}</dd><dt>Confidence</dt><dd>{pct(item.decision?.confidence)}</dd><dt>Reason</dt><dd>{item.decision?.reason}</dd><dt>Policy</dt><dd>{pretty(item.decision?.policyReason || 'No override')}</dd></dl><div className="buttons end"><button onClick={onClose}>Close</button>{item.event?._id && <button disabled={loading} onClick={async () => { if (await onDismiss(item)) onClose(); }}>Dismiss update</button>}</div></div></dialog>;
+}
 createRoot(document.getElementById('root')).render(<App/>);
