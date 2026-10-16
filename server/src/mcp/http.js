@@ -1,3 +1,4 @@
+import { connectDB } from '../config/db.js';
 import { createServer } from 'node:http';
 import { toNodeHandler, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 import { mcpHandler } from './server.js';
@@ -5,6 +6,7 @@ import { mcpHandler } from './server.js';
 const port = Number(process.env.MCP_PORT || 5100);
 const host = process.env.MCP_HOST || '127.0.0.1';
 
+await connectDB();
 const nodeHandler = toNodeHandler(mcpHandler);
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();

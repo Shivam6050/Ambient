@@ -26,6 +26,7 @@ function App() {
   const [notice, setNotice] = useState('Ready for a context-aware event.');
   const [selected, setSelected] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [durable, setDurable] = useState(false);
   const [checkedConnection, setCheckedConnection] = useState(false);
   const [section, setSection] = useState(() => window.location.hash === '#activity' ? 'activity' : 'overview');
   useEffect(() => {
@@ -36,11 +37,12 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [ctx, hist, records] = await Promise.all([
+      const [ctx, hist, records, health] = await Promise.all([
         request(`/context?userId=${USER}`),
-        request(`/events/history?userId=${USER}`), request(`/events?userId=${USER}`)
+        request(`/events/history?userId=${USER}`), request(`/events?userId=${USER}`), request('/health')
       ]);
       setReviews((records.data || []).filter(item => item.decision?.decision === 'ASK' && item.action?.status === 'pending_user_input' && ['review', 'notified'].includes(item.status)));
+      setDurable(health.durable === true);
       setConnected(true);
       setContext(ctx.data?.context || ctx.data);
       setHistory(hist.data?.decisions || []);
@@ -117,7 +119,7 @@ function App() {
 
 
   return <><a className="skip" href="#overview">Skip to dashboard</a><aside className="sidebar"><div className="sideBrand"><span className="brandMark">a</span>ambient</div><p className="sideLabel">WORKSPACE</p><nav aria-label="Main navigation"><a href="#overview" aria-current={section === 'overview' ? 'location' : undefined}><span>◫</span>Overview</a><a href="#activity" aria-current={section === 'activity' ? 'location' : undefined}><span>≡</span>Activity</a></nav><div className="sideFoot"><strong>A little less interruption.</strong>A little more focus.<br/>Hackathon demo · simulated devices</div></aside><main>
-    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>{connected ? 'Connected to workspace' : checkedConnection ? 'Connection unavailable' : 'Connecting…'}</span><b className={busy ? 'busy' : ''}>{!connected ? (checkedConnection ? 'OFFLINE' : 'CONNECTING') : busy ? 'FOCUS MODE' : 'AVAILABLE'}</b></div></header>
+    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>{connected ? (durable ? 'Saved to MongoDB' : 'Temporary session · resets on restart') : checkedConnection ? 'Connection unavailable' : 'Connecting…'}</span><b className={busy ? 'busy' : ''}>{!connected ? (checkedConnection ? 'OFFLINE' : 'CONNECTING') : busy ? 'FOCUS MODE' : 'AVAILABLE'}</b></div></header>
 
     <section className="hero" id="overview"><p className="eyebrow">YOUR DAY, WITH FEWER INTERRUPTIONS</p><h1>Make room for <span>the moment.</span></h1><p>Stay present. Ambient holds routine updates while you focus, and brings them back when you're ready.</p><div className="loop"><span>01 · Notice</span><i>→</i><span>02 · Understand</span><i>→</i><span>03 · Act at the right time</span></div></section>
     <div className={`notice ${!connected && checkedConnection ? 'error' : ''}`} role="status" aria-live="polite"><span aria-hidden="true">{loading ? '◌' : connected ? '●' : '○'}</span>{loading ? 'Working on your request…' : !connected ? (checkedConnection ? 'Connection unavailable. Showing the last loaded state; retrying automatically.' : 'Connecting to your workspace…') : notice.startsWith('Connection lost') ? 'Connection restored. Your workspace is up to date.' : notice}</div>

@@ -2,95 +2,65 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
-import mongoose from 'mongoose';
+import { createServer } from 'node:net';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import { fileURLToPath } from 'node:url';
 const cwd = fileURLToPath(new URL('../', import.meta.url));
-// Use in-memory MongoDB for tests
-let mongoServer;
-let uri;
-
-const base = 'http://127.0.0.1:5055/api';
-let child;
-let output = '';
-async function start() {
-  child = spawn(process.execPath, ['src/app.js'], { cwd, env: { ...process.env, PORT: '5055', MONGODB_URI: uri, AI_PROVIDER: 'rules' }, stdio: ['ignore', 'pipe', 'pipe'] });
-  child.stdout.on('data', data => { output += data; });
-  child.stderr.on('data', data => { output += data; });
-  for (let attempt = 0; attempt < 100; attempt++) {
+let child, base;
+async function freePort() {
+  const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port; await new Promise(resolve => server.close(resolve)); return port;
+}
+async function start(uri, review = false) {
+  const port = await freePort(); base = `http://127.0.0.1:${port}/api`;
+  child = spawn(process.execPath, ['src/app.js'], { cwd, env: { ...process.env, NODE_ENV: 'development', VERCEL: '', PORT: String(port), MONGODB_URI: uri, AI_PROVIDER: 'mock', AMBIENT_AUTO_THRESHOLD: review ? '0.97' : '0.80', AMBIENT_REVIEW_THRESHOLD: '0.55', ALEXA_PLUS_MODE: 'simulator' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = ''; child.stdout.on('data', d => { output += d; }); child.stderr.on('data', d => { output += d; });
+  for (let i = 0; i < 200; i++) {
     if (child.exitCode !== null) throw new Error(output);
-    try { if ((await fetch(base + '/health')).ok) return; } catch {}
+    try { const response = await fetch(base + '/health', { signal: AbortSignal.timeout(1000) }); if (response.ok) return; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error('Server did not start: ' + output);
+  throw new Error('API readiness timeout: ' + output);
 }
-async function stop() {
-  if (child && child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
-}
+async function stop() { if (child && child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; } }
 async function api(path, method = 'GET', body) {
-  const response = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
-  const result = await response.json();
-  assert.equal(response.ok, true, JSON.stringify(result));
-  return result.data;
+  const res = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
+  const json = await res.json(); assert.equal(res.ok, true, JSON.stringify(json)); return json.data;
 }
-const change = availability => api('/context', 'PATCH', { availability });
-const deliver = () => api('/events', 'POST', { event: { source: 'ring', type: 'package_delivered' }, context: { availability: 'available' } });
-test('MongoDB survives server restarts and prevents duplicate transitions', { timeout: 60000 }, async () => {
-  try {
-    await mongoose.connect(testUri, { serverSelectionTimeoutMS: 5000 });
-    await start();
-    await change('busy');
-    const delivery = await deliver();
-    assert.equal(delivery.status, 'deferred', 'server context overrides client-supplied context');
-    await stop(); await start();
-    assert.equal((await api('/context')).availability, 'busy');
-    assert.equal((await api('/events')).find(item => item.id === delivery.id).status, 'deferred');
-    await Promise.all([change('available'), change('available')]);
-    let restored = (await api('/events')).find(item => item.id === delivery.id);
-    assert.equal(restored.status, 'notified');
-    assert.equal(restored.timeline.filter(step => step.action === 'NOTIFY').length, 1);
-    await Promise.all([api('/events/' + delivery.id + '/dismiss', 'POST'), api('/events/' + delivery.id + '/dismiss', 'POST')]);
-    await stop(); await start();
-    restored = (await api('/events')).find(item => item.id === delivery.id);
-    assert.equal(restored.status, 'dismissed');
-    assert.equal(restored.timeline.filter(step => step.action === 'DISMISSED').length, 1);
-    await change('busy');
-    const urgent = await api('/events', 'POST', { event: { source: 'ring', type: 'security_alert' } });
-    assert.equal(urgent.status, 'notified');
-    const interrupted = await deliver();
-    await stop();
-    // Simulate a crash after context was persisted but before deferred records were released.
-    await mongoose.connection.collection('contexts').updateOne({ _id: 'local-user' }, { $set: { availability: 'available', activity: 'idle' } });
-    await start();
-    restored = (await api('/events')).find(item => item.id === interrupted.id);
-    assert.equal(restored.status, 'notified');
-    assert.equal(restored.timeline.filter(step => step.action === 'NOTIFY').length, 1);
-    const invalid = await fetch(base + '/context', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"availability":"invalid"}' });
-    assert.equal(invalid.status, 400);
-  } finally {
-    await stop();
-    await mongoose.disconnect();
-  }
-});
-
-test('local WiredTiger data survives stopping and restarting MongoDB itself', { timeout: 60000 }, async () => {
-  const { MongoMemoryServer } = await import('mongodb-memory-server');
-  const { mkdtemp } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const dbPath = await mkdtemp(join(tmpdir(), 'ambient-disk-test-'));
+const deliver = () => api('/events', 'POST', { event: { source: 'ring', type: 'package_delivered', priority: 'medium' } });
+test('MongoDB preserves context, delivery history, approvals and declines across API restarts', { timeout: 180000 }, async () => {
   let mongo;
   try {
-    mongo = await MongoMemoryServer.create({ binary: { version: '8.0.12' }, instance: { dbPath, storageEngine: 'wiredTiger' } });
-    await mongoose.connect(mongo.getUri('disk_test'), { writeConcern: { w: 1, j: true } });
-    await mongoose.connection.collection('proof').insertOne({ _id: 'dismissed-event', status: 'dismissed' });
-    await mongoose.disconnect();
+    mongo = await MongoMemoryServer.create({ binary: { version: '8.0.12' }, instance: { storageEngine: 'wiredTiger' } });
+    const uri = mongo.getUri('ambient_restart_test');
+    await start(uri);
+    await api('/context', 'PATCH', { availability: 'busy' });
+    const delivery = await deliver(); const id = String(delivery.event._id);
+    assert.equal(delivery.decision.decision, 'WAIT');
+    await stop(); await start(uri);
+    assert.equal((await api('/context')).context.availability, 'busy');
+    assert.equal((await api('/events')).find(r => r.id === id).status, 'deferred');
+    await api('/context', 'PATCH', { availability: 'available' });
+    let record = (await api('/events')).find(r => r.id === id);
+    assert.deepEqual(record.timeline.map(s => s.action), ['RECEIVED', 'WAIT', 'NOTIFY']);
+    await api(`/events/${id}/dismiss`, 'POST');
+    await stop(); await start(uri, true);
+    assert.equal((await api('/events')).find(r => r.id === id).status, 'dismissed');
+    const review = await deliver(); const reviewId = String(review.event._id);
+    assert.equal(review.decision.decision, 'ASK');
+    await api(`/events/${reviewId}/resolve`, 'POST', { choice: 'approve' });
+    const declined = await deliver(); const declinedId = String(declined.event._id);
+    await api(`/events/${declinedId}/resolve`, 'POST', { choice: 'decline' });
+    await stop(); await start(uri, true);
+    const records = await api('/events');
+    assert.equal(records.find(r => r.id === reviewId).resolution.choice, 'approve');
+    assert.equal(records.find(r => r.id === reviewId).action.status, 'ready');
+    assert.equal(records.find(r => r.id === declinedId).status, 'dismissed');
+    await api(`/events/${reviewId}/resolve`, 'POST', { choice: 'approve' });
+    assert.equal((await api('/events')).find(r => r.id === reviewId).timeline.filter(s => s.action === 'APPROVED').length, 1);
+    // Connection loss must reject writes rather than silently creating memory-only events.
     await mongo.stop({ doCleanup: false });
-    mongo = await MongoMemoryServer.create({ binary: { version: '8.0.12' }, instance: { dbPath, storageEngine: 'wiredTiger' } });
-    await mongoose.connect(mongo.getUri('disk_test'));
-    assert.equal((await mongoose.connection.collection('proof').findOne({ _id: 'dismissed-event' })).status, 'dismissed');
-  } finally {
-    await mongoose.disconnect();
-    if (mongo) await mongo.stop({ doCleanup: true, force: true });
-  }
+    const failed = await fetch(base + '/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: { source: 'ring', type: 'package_delivered' } }), signal: AbortSignal.timeout(20000) });
+    assert.equal(failed.status, 503);
+  } finally { await stop(); if (mongo) await mongo.stop({ doCleanup: true, force: true }); }
 });

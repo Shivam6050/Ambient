@@ -3,7 +3,10 @@
   "version": "0.9.0",
   "private": true,
   "type": "module",
-  "workspaces": ["server", "client"],
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
     "setup": "npm install",
     "dev": "concurrently --kill-others -n server,client \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 127.0.0.1 --port 5173 --strictPort\"",
@@ -16,6 +19,7 @@
     "test:lifecycle": "npm run test:lifecycle --prefix server"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "mongodb-memory-server": "^11.2.0"
   }
 }

@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { env } from './config/env.js';
-import { connectDB, isDBConnected } from './config/db.js';
+import { connectDB, storageStatus } from './config/db.js';
 import agentRoutes from './routes/agent.routes.js';
 import contextRoutes from './routes/context.routes.js';
 import eventRoutes from './routes/event.routes.js';
@@ -17,13 +17,15 @@ app.use(cors({ origin: env.clientOrigin || true }));
 app.use('/api/integrations/ring/webhook', express.raw({ type: 'application/json', limit: '100kb' }));
 app.use(express.json({ limit: '100kb' }));
 
-app.get('/api/health', (_req, res) => res.json({
-  success: true,
-  service: 'ambient-server',
-  status: 'ok',
-  storage: isDBConnected() ? 'mongodb' : 'in-memory',
-  aiProvider: env.aiProvider
-}));
+app.get('/api/health', async (_req, res) => {
+  try { await connectDB(); } catch {}
+  const storage = storageStatus();
+  res.status(storage.ready ? 200 : 503).json({ success: storage.ready, service: 'ambient-server', status: storage.ready ? 'ok' : 'storage-unavailable', storage: storage.mode, durable: storage.durable, aiProvider: env.aiProvider });
+});
+// Applies to local and serverless APIs. Never route configured database failures into memory.
+app.use('/api', async (_req, _res, next) => {
+  try { await connectDB(); next(); } catch (error) { next(error); }
+});
 app.use('/api/agent', agentRoutes);
 app.use('/api/context', contextRoutes);
 app.use('/api/events', eventRoutes);
@@ -32,7 +34,7 @@ app.use('/api/integrations/ring', ringRoutes);
 app.use(errorMiddleware);
 
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-  await connectDB();
+  try { await connectDB(); } catch { console.warn('MongoDB unavailable; API will report 503 until connection is restored.'); }
   app.listen(env.port, () => console.log(`Ambient API running at http://localhost:${env.port}`));
 }
 

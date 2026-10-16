@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import { evaluateEvent } from '../services/agent/agent.service.js';
 import { getContext, updateContext } from '../services/context/context.service.js';
 import { getWaitingEvents, reEvaluateWaitingEvents } from '../services/events/reEvaluation.service.js';
-import { getDecisions } from '../services/events/memory.js';
+import { history } from '../services/events/event.service.js';
 import { getActionCapabilities } from '../services/actions/actionRouter.js';
 import { getAlexaAdapterStatus } from '../services/actions/alexaAdapter.js';
 import { getRingAdapterStatus } from '../services/actions/ringAdapter.js';
@@ -59,7 +59,7 @@ export const mcpHandler = createMcpHandler(() => {
   server.registerTool('ambient_get_decision_history', {
     description: 'Read recent Ambient decisions for a user.',
     inputSchema: z.object({ userId: z.string().default('demo-user') })
-  }, async ({ userId }) => result(getDecisions(userId)));
+  }, async ({ userId }) => result((await history(userId)).decisions));
 
   server.registerTool('ambient_get_action_capabilities', {
     description: 'List available action adapters and whether Alexa+ or Ring integrations are configured.',

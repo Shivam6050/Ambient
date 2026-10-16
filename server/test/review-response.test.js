@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { saveEvent, saveRecord, getRecord } from '../src/services/events/memory.js';
-import { resolveReview, dismissEvent } from '../src/services/events/event.service.js';
+process.env.MONGODB_URI = '';
+const { resolveReview, dismissEvent } = await import('../src/services/events/event.service.js');
 function seed(status = 'review') {
   const id = randomUUID(); const userId = randomUUID();
   const event = { _id: id, userId, type: 'package_delivered', status: 'handled' };

@@ -37,7 +37,7 @@ Amazon Bedrock is **not** the primary decision engine. It is an optional AWS Bui
 | Ambient Express backend | Real local code |
 | React dashboard | Real local code |
 | MongoDB persistence | Optional real integration |
-| In-memory fallback | Real local implementation |
+| In-memory demo mode | Real local implementation |
 | Jev API | Real integration when configured |
 | Amazon Bedrock | Real SDK integration when enabled |
 | Alexa+ experience | MCP-ready adapter + simulator fallback |
@@ -157,7 +157,9 @@ With MongoDB:
 MONGODB_URI=mongodb://127.0.0.1:27017/ambient
 ```
 
-The app will attempt MongoDB and fall back to memory if the database is unavailable.
+When MONGODB_URI is configured, database failures return HTTP 503 instead of silently saving to memory. The dashboard labels connected MongoDB storage and temporary sessions explicitly. Without MONGODB_URI, data resets when the API restarts. The health endpoint reports storage mode and durability.
+
+Run `npm test` for regression coverage, including an isolated MongoDB test that restarts the API and verifies context, delivery history, approvals, and declines. The first run downloads a MongoDB test binary.
 
 ## Tests
 
