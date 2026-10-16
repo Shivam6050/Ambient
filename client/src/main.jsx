@@ -8,7 +8,7 @@ const pretty = (v = '') => String(v).replaceAll('_', ' ').replace(/\b\w/g, c => 
 const pct = v => `${Math.round((Number(v) || 0) * 100)}%`;
 
 async function request(path, options = {}) {
-  const res = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+  const res = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options, signal: options.signal || AbortSignal.timeout(30000) });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.message || `Request failed (${res.status})`);
   return body;
@@ -25,6 +25,13 @@ function App() {
   const [notice, setNotice] = useState('Ready for a context-aware event.');
   const [selected, setSelected] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [checkedConnection, setCheckedConnection] = useState(false);
+  const [section, setSection] = useState(() => window.location.hash === '#activity' ? 'activity' : 'overview');
+  useEffect(() => {
+    const sync = () => setSection(window.location.hash === '#activity' ? 'activity' : 'overview');
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -37,10 +44,16 @@ function App() {
       setHistory(hist.data?.decisions || []);
       setWaiting(hist.data?.waiting || []);
       setNotification((records.data || []).find(item => item.status === 'notified' && (item.action?.status === 'ready' || (!item.action && item.decision?.decision === 'NOTIFY'))) || null);
-    } catch (e) { setConnected(false); setNotice(`Connection lost. Your saved data is unchanged. Retrying automatically.`); }
+    } catch (e) { setConnected(false); setNotice(`Connection lost. Showing the last loaded state. Retrying automatically.`); } finally { setCheckedConnection(true); }
   }, []);
 
-  useEffect(() => { load(); const timer = setInterval(load, 3000); return () => clearInterval(timer); }, [load]);
+  useEffect(() => {
+    let stopped = false;
+    let timer;
+    const poll = async () => { await load(); if (!stopped) timer = setTimeout(poll, 3000); };
+    poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [load]);
 
   const applyContext = async availability => {
     setLoading(true); setNotification(null); setInsight(null);
@@ -91,11 +104,11 @@ function App() {
   const priorityDist = result?.decision?.jev?.probabilities?.priority || {};
 
 
-  return <><a className="skip" href="#overview">Skip to dashboard</a><aside className="sidebar"><div className="sideBrand"><span className="brandMark">a</span>ambient</div><p className="sideLabel">WORKSPACE</p><nav aria-label="Main navigation"><a href="#overview"><span>◫</span>Overview</a><a href="#activity"><span>≡</span>Activity</a></nav><div className="sideFoot"><strong>A little less interruption.</strong>A little more focus.<br/>Hackathon demo · simulated devices</div></aside><main>
-    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>{connected ? 'Connected to workspace' : 'Connecting…'}</span><b className={busy ? 'busy' : ''}>{!connected ? 'OFFLINE' : busy ? 'FOCUS MODE' : 'AVAILABLE'}</b></div></header>
+  return <><a className="skip" href="#overview">Skip to dashboard</a><aside className="sidebar"><div className="sideBrand"><span className="brandMark">a</span>ambient</div><p className="sideLabel">WORKSPACE</p><nav aria-label="Main navigation"><a href="#overview" aria-current={section === 'overview' ? 'location' : undefined}><span>◫</span>Overview</a><a href="#activity" aria-current={section === 'activity' ? 'location' : undefined}><span>≡</span>Activity</a></nav><div className="sideFoot"><strong>A little less interruption.</strong>A little more focus.<br/>Hackathon demo · simulated devices</div></aside><main>
+    <header><div className="brand"><span className="dot"/>AMBIENT <em>v0.9.0</em></div><div className="headerStatus"><span>{connected ? 'Connected to workspace' : checkedConnection ? 'Connection unavailable' : 'Connecting…'}</span><b className={busy ? 'busy' : ''}>{!connected ? (checkedConnection ? 'OFFLINE' : 'CONNECTING') : busy ? 'FOCUS MODE' : 'AVAILABLE'}</b></div></header>
 
     <section className="hero" id="overview"><p className="eyebrow">YOUR DAY, WITH FEWER INTERRUPTIONS</p><h1>Make room for <span>the moment.</span></h1><p>Stay present. Ambient holds routine updates while you focus, and brings them back when you're ready.</p><div className="loop"><span>01 · Notice</span><i>→</i><span>02 · Understand</span><i>→</i><span>03 · Act at the right time</span></div></section>
-    <div className={`notice ${!connected ? 'error' : ''}`} role="status" aria-live="polite"><span aria-hidden="true">{connected ? '●' : '○'}</span>{!connected ? 'Connecting to your workspace. Retrying automatically…' : notice.startsWith('Connection lost') ? 'Connection restored. Your workspace is up to date.' : notice}</div>
+    <div className={`notice ${!connected && checkedConnection ? 'error' : ''}`} role="status" aria-live="polite"><span aria-hidden="true">{loading ? '◌' : connected ? '●' : '○'}</span>{loading ? 'Working on your request…' : !connected ? (checkedConnection ? 'Connection unavailable. Showing the last loaded state; retrying automatically.' : 'Connecting to your workspace…') : notice.startsWith('Connection lost') ? 'Connection restored. Your workspace is up to date.' : notice}</div>
     <section className="two"><Panel title="YOUR CONTEXT" heading="Protect your focus"><div className="moment"><div className={`momentIcon ${busy ? 'busy' : ''}`}>{busy ? '◉' : '○'}</div><div><strong>{!context ? 'Loading your context…' : busy ? 'In a meeting' : 'Open to updates'}</strong><small>{context?.location || 'home'} · {context?.activity || 'idle'}</small></div></div><div className="buttons"><button disabled={loading || !connected || busy} onClick={() => applyContext('busy')}>Start meeting</button><button disabled={loading || !connected || !busy} onClick={() => applyContext('available')}>End meeting</button></div></Panel>
       <Panel title="EVENT SIMULATOR" heading="Try a real-life moment"><div className="events"><button onClick={() => simulate('package_delivered')} disabled={loading || !connected}><span aria-hidden="true">◇</span><div><b>Package delivered</b><small>Routine · front door · Ring simulator</small></div></button><button onClick={() => simulate('security_alert')} disabled={loading || !connected}><span aria-hidden="true">!</span><div><b>Security alert</b><small>Critical · front door · Ring simulator</small></div></button></div><small className="muted">The Ring device is simulated for the hackathon demo.</small></Panel></section>
 
@@ -112,7 +125,7 @@ function App() {
       {result.decision?.jev && <section className="panel"><div className="panelTop"><div><p className="eyebrow">DECISION SIGNALS</p><h2>Typed model outputs</h2></div><span className="muted">No prose parsing</span></div><div className="signals"><Distribution title="Action" data={decisionDist} selected={result.decision.decision}/><Distribution title="Urgency" data={priorityDist} selected={result.decision.priority} priority/><div className="signal"><label>Should interrupt?</label><strong>{pct(result.decision.jev.interruptProbability)}</strong><small>Noul probability</small><div className="meter"><i style={{width:pct(result.decision.jev.interruptProbability)}}/></div></div></div></section>}
     </>}
 
-    <section className="panel" id="activity"><div className="panelTop"><div><p className="eyebrow">YOUR ACTIVITY</p><h2>Decision history</h2></div><span className="muted">Latest 20</span></div>{history.length ? history.map((d,i)=><div className="history" key={d._id || `${d.createdAt}-${i}`}><span>{String(i+1).padStart(2,'0')}</span><b>{d.decision}</b><span>{d.priority}</span><small>{d.source} · {pct(d.confidence)}</small><button onClick={() => setSelected({decision:d})}>Inspect</button></div>) : <div className="emptyState"><strong>A quieter day starts here.</strong><p>Start a meeting, then simulate a package delivery.<br/>Each decision will appear here, with its reason.</p></div>}</section>
+    <section className="panel" id="activity"><div className="panelTop"><div><p className="eyebrow">YOUR ACTIVITY</p><h2>Decision history</h2></div><span className="muted">Latest 20</span></div>{history.length ? history.map((d,i)=><div className="history" key={d._id || `${d.createdAt}-${i}`}><span>{String(i+1).padStart(2,'0')}</span><b>{d.decision}<time className="historyTime" dateTime={d.createdAt}>{d.createdAt && !Number.isNaN(Date.parse(d.createdAt)) ? new Date(d.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Time unavailable'}</time></b><span>{d.priority}</span><small>{d.source} · {pct(d.confidence)}</small><button onClick={() => setSelected({decision:d})}>Inspect</button></div>) : <div className="emptyState"><strong>A quieter day starts here.</strong><p>Start a meeting, then simulate a package delivery.<br/>Each decision will appear here, with its reason.</p></div>}</section>
 
     {selected && <Details item={selected} onClose={() => setSelected(null)} onDismiss={dismiss} loading={loading}/>}
     <footer>Ambient · Thoughtful by design<span>Device experiences are simulated. Decisions are real application outputs.</span></footer>
@@ -124,7 +137,7 @@ function Distribution({title,data,selected,priority=false}) { const entries=Obje
 
 function Details({item, onClose, onDismiss, loading}) {
   const ref = useRef(null);
-  useEffect(() => { const dialog = ref.current; dialog.showModal(); return () => dialog.close(); }, []);
+  useEffect(() => { const dialog = ref.current; const overflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; dialog.showModal(); return () => { dialog.close(); document.body.style.overflow = overflow; }; }, []);
   return <dialog className="overlay" ref={ref} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }} aria-labelledby="detail-title"><div className="modal"><div className="modalTop"><h3 id="detail-title">Decision details</h3><button onClick={onClose} aria-label="Close details">×</button></div><p className="muted">{item.event ? 'A simulated device event, evaluated against your context.' : 'A saved decision from your activity history.'}</p><dl>{item.event && <><dt>Event</dt><dd>{pretty(item.event.type)}</dd><dt>Source</dt><dd>{pretty(item.event.source)}</dd></>}<dt>Decision</dt><dd>{item.decision?.decision}</dd><dt>Priority</dt><dd>{pretty(item.decision?.priority)}</dd><dt>Confidence</dt><dd>{pct(item.decision?.confidence)}</dd><dt>Reason</dt><dd>{item.decision?.reason}</dd><dt>Policy</dt><dd>{pretty(item.decision?.policyReason || 'No override')}</dd></dl><div className="buttons end"><button onClick={onClose}>Close</button>{item.event?._id && <button disabled={loading} onClick={async () => { if (await onDismiss(item)) onClose(); }}>Dismiss update</button>}</div></div></dialog>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
