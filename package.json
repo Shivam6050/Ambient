@@ -16,7 +16,8 @@
     "build": "npm run build --workspace=client",
     "test": "npm test --prefix server",
     "test:policy": "npm run test:policy --prefix server",
-    "test:lifecycle": "npm run test:lifecycle --prefix server"
+    "test:lifecycle": "npm run test:lifecycle --prefix server",
+    "db:check": "node server/scripts/check-db.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
