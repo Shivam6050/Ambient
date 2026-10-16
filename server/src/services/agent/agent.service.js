@@ -119,7 +119,7 @@ async function evaluateEventInternal(payload, suppliedContext = null, userId = '
     action,
     context,
     decision: savedDecision.toObject?.() || savedDecision,
-    status: status === 'waiting' ? 'deferred' : status === 'ignored' ? 'ignored' : 'notified',
+    status: decision.decision === 'ASK' ? 'review' : status === 'waiting' ? 'deferred' : status === 'ignored' ? 'ignored' : 'notified',
     timeline
   };
 

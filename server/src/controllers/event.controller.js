@@ -1,7 +1,7 @@
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { evaluateEvent } from '../services/agent/agent.service.js';
-import { history, listEvents, dismissEvent } from '../services/events/event.service.js';
+import { history, listEvents, dismissEvent, resolveReview } from '../services/events/event.service.js';
 
 export const createEvent = asyncHandler(async (req, res) => {
   const event = req.body?.event || req.body;
@@ -17,4 +17,9 @@ export const dismiss = asyncHandler(async (req, res) => {
   const result = await dismissEvent(req.params.id, req.query.userId || 'demo-user');
   if (!result) return res.status(404).json({ success: false, message: 'Event not found' });
   return ApiResponse(res, 200, result, 'Event dismissed');
+});
+
+export const resolve = asyncHandler(async (req, res) => {
+  const record = await resolveReview(req.params.id, req.body?.choice, req.query.userId || 'demo-user');
+  return ApiResponse(res, 200, record, 'Confirmation saved');
 });

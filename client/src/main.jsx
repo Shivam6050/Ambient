@@ -18,6 +18,7 @@ function App() {
   const [context, setContext] = useState(null);
   const [history, setHistory] = useState([]);
   const [waiting, setWaiting] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [result, setResult] = useState(null);
   const [notification, setNotification] = useState(null);
   const [insight, setInsight] = useState(null);
@@ -39,6 +40,7 @@ function App() {
         request(`/context?userId=${USER}`),
         request(`/events/history?userId=${USER}`), request(`/events?userId=${USER}`)
       ]);
+      setReviews((records.data || []).filter(item => item.decision?.decision === 'ASK' && item.action?.status === 'pending_user_input' && ['review', 'notified'].includes(item.status)));
       setConnected(true);
       setContext(ctx.data?.context || ctx.data);
       setHistory(hist.data?.decisions || []);
@@ -90,6 +92,16 @@ function App() {
     catch (e) { setNotice(e.message); } finally { setLoading(false); }
   };
 
+  const resolve = async (item, choice) => {
+    setLoading(true);
+    try {
+      await request(`/events/${item.id}/resolve?userId=${USER}`, { method: 'POST', body: JSON.stringify({ choice }) });
+      setNotice(choice === 'approve' ? 'Approved. Your update is ready below.' : 'Declined. This update will not notify you.');
+      await load();
+    } catch (error) { setNotice(error.message); }
+    finally { setLoading(false); }
+  };
+
   const generateInsight = async () => {
     if (!result) return;
     setLoading(true);
@@ -112,6 +124,7 @@ function App() {
     <section className="two"><Panel title="YOUR CONTEXT" heading="Protect your focus"><div className="moment"><div className={`momentIcon ${busy ? 'busy' : ''}`}>{busy ? '◉' : '○'}</div><div><strong>{!context ? 'Loading your context…' : busy ? 'In a meeting' : 'Open to updates'}</strong><small>{context?.location || 'home'} · {context?.activity || 'idle'}</small></div></div><div className="buttons"><button disabled={loading || !connected || busy} onClick={() => applyContext('busy')}>Start meeting</button><button disabled={loading || !connected || !busy} onClick={() => applyContext('available')}>End meeting</button></div></Panel>
       <Panel title="EVENT SIMULATOR" heading="Try a real-life moment"><div className="events"><button onClick={() => simulate('package_delivered')} disabled={loading || !connected}><span aria-hidden="true">◇</span><div><b>Package delivered</b><small>Routine · front door · Ring simulator</small></div></button><button onClick={() => simulate('security_alert')} disabled={loading || !connected}><span aria-hidden="true">!</span><div><b>Security alert</b><small>Critical · front door · Ring simulator</small></div></button></div><small className="muted">The Ring device is simulated for the hackathon demo.</small></Panel></section>
 
+    {reviews.length > 0 && <section className="panel reviewQueue" aria-label="Updates needing your confirmation"><p className="eyebrow">YOUR CHOICE · {reviews.length} PENDING</p><h2>A quick check before interrupting</h2><p className="muted">Choose whether to show each simulated update now. No device command will be sent.</p>{reviews.map(item => <article className="reviewItem" key={item.id}><h3>{pretty(item.event?.type)}</h3><p>{item.decision?.reason}</p><div className="buttons"><button disabled={loading || !connected} onClick={() => resolve(item, 'approve')}>Show update now</button><button disabled={loading || !connected} onClick={() => resolve(item, 'decline')}>Decline</button><button onClick={() => setSelected(item)}>Details</button></div></article>)}</section>}
     {notification && <section className="notification"><div className="notifTop"><div className="orb">A</div><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>A timely update</h2></div><b>SIMULATED ALEXA+</b></div><div className="message">{notification.action?.message || `Your ${pretty(notification.event?.type)} needs your attention.`}</div><div className="chips"><span>Decision · {notification.decision?.decision}</span><span>Confidence · {pct(notification.decision?.confidence)}</span><span>Source · {notification.decision?.source}</span></div><div className="buttons"><button onClick={() => setSelected(notification)}>Show details →</button><button disabled={loading || !connected} onClick={() => dismiss(notification)}>Dismiss</button></div></section>}
 
     {waiting[0] && <section className="waiting"><div><p className="eyebrow">SAVED FOR LATER</p><h2>Your focus comes first.</h2><p>{pretty(waiting[0].type)} is waiting. Ambient will reconsider it when your context changes.</p></div><strong>WAIT<small>re-evaluate on context change</small></strong></section>}
@@ -138,6 +151,6 @@ function Distribution({title,data,selected,priority=false}) { const entries=Obje
 function Details({item, onClose, onDismiss, loading}) {
   const ref = useRef(null);
   useEffect(() => { const dialog = ref.current; const overflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; dialog.showModal(); return () => { dialog.close(); document.body.style.overflow = overflow; }; }, []);
-  return <dialog className="overlay" ref={ref} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }} aria-labelledby="detail-title"><div className="modal"><div className="modalTop"><h3 id="detail-title">Decision details</h3><button onClick={onClose} aria-label="Close details">×</button></div><p className="muted">{item.event ? 'A simulated device event, evaluated against your context.' : 'A saved decision from your activity history.'}</p><dl>{item.event && <><dt>Event</dt><dd>{pretty(item.event.type)}</dd><dt>Source</dt><dd>{pretty(item.event.source)}</dd></>}<dt>Decision</dt><dd>{item.decision?.decision}</dd><dt>Priority</dt><dd>{pretty(item.decision?.priority)}</dd><dt>Confidence</dt><dd>{pct(item.decision?.confidence)}</dd><dt>Reason</dt><dd>{item.decision?.reason}</dd><dt>Policy</dt><dd>{pretty(item.decision?.policyReason || 'No override')}</dd></dl><div className="buttons end"><button onClick={onClose}>Close</button>{item.event?._id && <button disabled={loading} onClick={async () => { if (await onDismiss(item)) onClose(); }}>Dismiss update</button>}</div></div></dialog>;
+  return <dialog className="overlay" ref={ref} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }} aria-labelledby="detail-title"><div className="modal"><div className="modalTop"><h3 id="detail-title">Decision details</h3><button onClick={onClose} aria-label="Close details">×</button></div><p className="muted">{item.event ? 'A simulated device event, evaluated against your context.' : 'A saved decision from your activity history.'}</p><dl>{item.event && <><dt>Event</dt><dd>{pretty(item.event.type)}</dd><dt>Source</dt><dd>{pretty(item.event.source)}</dd></>}<dt>Decision</dt><dd>{item.decision?.decision}</dd><dt>Priority</dt><dd>{pretty(item.decision?.priority)}</dd><dt>Confidence</dt><dd>{pct(item.decision?.confidence)}</dd><dt>Your response</dt><dd>{item.resolution?.choice ? pretty(item.resolution.choice) : 'Not recorded'}</dd><dt>Reason</dt><dd>{item.decision?.reason}</dd><dt>Policy</dt><dd>{pretty(item.decision?.policyReason || 'No override')}</dd></dl><div className="buttons end"><button onClick={onClose}>Close</button>{item.event?._id && <button disabled={loading} onClick={async () => { if (await onDismiss(item)) onClose(); }}>Dismiss update</button>}</div></div></dialog>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
